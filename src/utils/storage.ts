@@ -1,0 +1,112 @@
+import { YouTubeChannel, YouTubeVideo, DailyReport, AppSettings } from '../types';
+import { DEFAULT_CHANNELS } from '../data/defaultChannels';
+import { INITIAL_VIDEOS } from '../data/mockVideos';
+
+const CHANNELS_KEY = 'yt_summary_channels_v1';
+const VIDEOS_KEY = 'yt_summary_videos_v1';
+const REPORTS_KEY = 'yt_summary_reports_v1';
+const SETTINGS_KEY = 'yt_summary_settings_v1';
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  summaryDetailLevel: 'standard',
+  preferredLanguage: 'ko',
+  autoAnalyzeNewVideos: true,
+  defaultExportFormat: 'markdown',
+  includeTimelineInSummary: true,
+  channels: DEFAULT_CHANNELS
+};
+
+export function loadChannels(): YouTubeChannel[] {
+  try {
+    const raw = localStorage.getItem(CHANNELS_KEY);
+    if (!raw) {
+      saveChannels(DEFAULT_CHANNELS);
+      return DEFAULT_CHANNELS;
+    }
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error('Failed to load channels', e);
+    return DEFAULT_CHANNELS;
+  }
+}
+
+export function saveChannels(channels: YouTubeChannel[]): void {
+  try {
+    localStorage.setItem(CHANNELS_KEY, JSON.stringify(channels));
+  } catch (e) {
+    console.error('Failed to save channels', e);
+  }
+}
+
+export function loadVideos(): YouTubeVideo[] {
+  try {
+    const raw = localStorage.getItem(VIDEOS_KEY);
+    if (!raw) {
+      saveVideos(INITIAL_VIDEOS);
+      return INITIAL_VIDEOS;
+    }
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error('Failed to load videos', e);
+    return INITIAL_VIDEOS;
+  }
+}
+
+export function saveVideos(videos: YouTubeVideo[]): void {
+  try {
+    localStorage.setItem(VIDEOS_KEY, JSON.stringify(videos));
+  } catch (e) {
+    console.error('Failed to save videos', e);
+  }
+}
+
+export function loadReports(): DailyReport[] {
+  try {
+    const raw = localStorage.getItem(REPORTS_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error('Failed to load reports', e);
+    return [];
+  }
+}
+
+export function saveReports(reports: DailyReport[]): void {
+  try {
+    localStorage.setItem(REPORTS_KEY, JSON.stringify(reports));
+  } catch (e) {
+    console.error('Failed to save reports', e);
+  }
+}
+
+export function loadSettings(): AppSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) {
+      saveSettings(DEFAULT_SETTINGS);
+      return DEFAULT_SETTINGS;
+    }
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+  } catch (e) {
+    console.error('Failed to load settings', e);
+    return DEFAULT_SETTINGS;
+  }
+}
+
+export function saveSettings(settings: AppSettings): void {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch (e) {
+    console.error('Failed to save settings', e);
+  }
+}
+
+export function resetAllData(): void {
+  localStorage.removeItem(CHANNELS_KEY);
+  localStorage.removeItem(VIDEOS_KEY);
+  localStorage.removeItem(REPORTS_KEY);
+  localStorage.removeItem(SETTINGS_KEY);
+  saveChannels(DEFAULT_CHANNELS);
+  saveVideos(INITIAL_VIDEOS);
+  saveSettings(DEFAULT_SETTINGS);
+}
