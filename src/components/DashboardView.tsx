@@ -25,6 +25,7 @@ import { useToast } from './Toast';
 interface DashboardViewProps {
   videos: YouTubeVideo[];
   channels: YouTubeChannel[];
+  categories?: string[];
   onOpenDetail: (video: YouTubeVideo) => void;
   onToggleBookmark: (videoId: string) => void;
   onReanalyze: (video: YouTubeVideo) => void;
@@ -34,21 +35,10 @@ interface DashboardViewProps {
   analyzingVideoId: string | null;
 }
 
-const CATEGORIES: { label: string; value: string }[] = [
-  { label: '전체 카테고리', value: 'ALL' },
-  { label: '💻 IT/테크', value: 'IT/테크' },
-  { label: '📈 경제/재테크', value: '경제/재테크' },
-  { label: '🚀 비즈니스/스타트업', value: '비즈니스/스타트업' },
-  { label: '🔬 과학/지식', value: '과학/지식' },
-  { label: '📰 뉴스/시사', value: '뉴스/시사' },
-  { label: '🌱 자기계발/교육', value: '자기계발/교육' },
-  { label: '🎬 라이프/엔터', value: '라이프/엔터' },
-  { label: '기타', value: '기타' }
-];
-
 export const DashboardView: React.FC<DashboardViewProps> = ({
   videos,
   channels,
+  categories = ['IT/테크', '경제/재테크', '비즈니스/스타트업', '과학/지식', '뉴스/시사', '자기계발/교육', '라이프/엔터', '기타'],
   onOpenDetail,
   onToggleBookmark,
   onReanalyze,
@@ -59,6 +49,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 }) => {
   const { showToast } = useToast();
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+
+  const categoryFilterList = useMemo(() => {
+    return [
+      { label: '전체', value: 'ALL' },
+      ...categories.map(cat => ({ label: cat, value: cat }))
+    ];
+  }, [categories]);
 
   // Filters State
   const [filters, setFilters] = useState<FilterState>({
@@ -257,7 +254,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* 3. Category Filter Pills */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-        {CATEGORIES.map(cat => {
+        {categoryFilterList.map(cat => {
           const isActive = filters.category === cat.value;
           return (
             <button

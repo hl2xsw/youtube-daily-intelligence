@@ -29,6 +29,7 @@ import { useToast } from './Toast';
 
 interface VideoDetailModalProps {
   video: YouTubeVideo | null;
+  categories?: string[];
   onClose: () => void;
   onToggleBookmark: (videoId: string) => void;
   onReanalyze: (video: YouTubeVideo) => void;
@@ -36,7 +37,7 @@ interface VideoDetailModalProps {
   isAnalyzing?: boolean;
 }
 
-const ALL_CATEGORIES: VideoCategory[] = [
+const DEFAULT_ALL_CATEGORIES: string[] = [
   'IT/테크',
   '경제/재테크',
   '비즈니스/스타트업',
@@ -49,6 +50,7 @@ const ALL_CATEGORIES: VideoCategory[] = [
 
 export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
   video,
+  categories = DEFAULT_ALL_CATEGORIES,
   onClose,
   onToggleBookmark,
   onReanalyze,
@@ -131,7 +133,7 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                   onChange={(e) => onChangeCategory(video.id, e.target.value as VideoCategory)}
                   className="px-1.5 py-0.5 text-xs font-medium rounded-md border border-slate-200 bg-slate-50 text-slate-700 cursor-pointer hover:border-slate-300"
                 >
-                  {ALL_CATEGORIES.map(cat => (
+                  {categories.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
                 </select>

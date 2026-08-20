@@ -1,12 +1,4 @@
-export type VideoCategory = 
-  | 'IT/테크'
-  | '경제/재테크'
-  | '비즈니스/스타트업'
-  | '과학/지식'
-  | '뉴스/시사'
-  | '자기계발/교육'
-  | '라이프/엔터'
-  | '기타';
+export type VideoCategory = string;
 
 export interface YouTubeChannel {
   id: string;

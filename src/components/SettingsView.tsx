@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { YouTubeChannel, VideoCategory, AppSettings } from '../types';
 import { CHANNEL_PRESET_PACKS } from '../data/defaultChannels';
 import { 
@@ -17,12 +17,18 @@ import {
   Search,
   CheckCircle2,
   AlertTriangle,
-  PackagePlus
+  PackagePlus,
+  FolderPlus,
+  Tag,
+  X
 } from 'lucide-react';
 import { useToast } from './Toast';
 
 interface SettingsViewProps {
   channels: YouTubeChannel[];
+  categories: string[];
+  onAddCategory: (categoryName: string) => boolean;
+  onDeleteCategory: (categoryName: string) => void;
   onAddChannel: (channel: Omit<YouTubeChannel, 'id' | 'addedAt'>) => void;
   onDeleteChannel: (channelId: string) => void;
   onToggleChannelActive: (channelId: string) => void;
@@ -33,19 +39,22 @@ interface SettingsViewProps {
   onResetAllData: () => void;
 }
 
-const ALL_CATEGORIES: VideoCategory[] = [
-  'IT/테크',
-  '경제/재테크',
-  '비즈니스/스타트업',
-  '과학/지식',
-  '뉴스/시사',
-  '자기계발/교육',
-  '라이프/엔터',
-  '기타'
+const POPULAR_CATEGORY_PRESETS = [
+  'AI/인공지능',
+  '부동산/청약',
+  '글로벌/해외이슈',
+  '건강/운동',
+  '디자인/UIUX',
+  '게임/e스포츠',
+  '어학/영어',
+  '자기계발/동기부여'
 ];
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   channels,
+  categories,
+  onAddCategory,
+  onDeleteCategory,
   onAddChannel,
   onDeleteChannel,
   onToggleChannelActive,
@@ -59,10 +68,47 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Add Channel Form State
   const [channelInput, setChannelInput] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<VideoCategory>('IT/테크');
+  const [selectedCategory, setSelectedCategory] = useState<VideoCategory>(categories[0] || 'IT/테크');
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [searchChannelFilter, setSearchChannelFilter] = useState('');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('ALL');
   const [channelToDelete, setChannelToDelete] = useState<YouTubeChannel | null>(null);
+
+  // Category Management State
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  const [newCategoryInput, setNewCategoryInput] = useState('');
+  const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
+  const newCategoryInputRef = useRef<HTMLInputElement>(null);
+
+  // Focus input when category creation opens
+  useEffect(() => {
+    if (isCreatingCategory && newCategoryInputRef.current) {
+      newCategoryInputRef.current.focus();
+    }
+  }, [isCreatingCategory]);
+
+  // Keep selectedCategory valid if categories change
+  useEffect(() => {
+    if (categories.length > 0 && !categories.includes(selectedCategory)) {
+      setSelectedCategory(categories[0]);
+    }
+  }, [categories, selectedCategory]);
+
+  // Handle Category Creation
+  const handleCreateCategory = (nameToCreate?: string) => {
+    const targetName = (nameToCreate || newCategoryInput).trim();
+    if (!targetName) {
+      showToast('카테고리 이름을 입력해주세요.', 'error');
+      return;
+    }
+
+    const success = onAddCategory(targetName);
+    if (success) {
+      setNewCategoryInput('');
+      setIsCreatingCategory(false);
+      setSelectedCategory(targetName);
+    }
+  };
 
   // Handle Add Channel
   const handleLookupAndAdd = async (e: React.FormEvent) => {
@@ -130,8 +176,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
-  // Filter channels list
+  // Filter channels list by search query and category filter
   const filteredChannels = channels.filter(c => {
+    if (selectedCategoryFilter !== 'ALL' && c.category !== selectedCategoryFilter) {
+      return false;
+    }
     if (!searchChannelFilter.trim()) return true;
     const q = searchChannelFilter.toLowerCase();
     return c.title.toLowerCase().includes(q) || c.handle?.toLowerCase().includes(q) || c.category.toLowerCase().includes(q);
@@ -147,12 +196,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             유튜브 채널 관리 및 요약 설정
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            매일 전일 영상을 모니터링할 유튜브 채널을 추가/삭제하고, AI 요약 옵션을 구성하세요.
+            매일 전일 영상을 모니터링할 유튜브 채널을 추가/삭제하고, 카테고리를 자유롭게 생성하여 분류하세요.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <span className="px-2.5 py-1 bg-slate-100 text-slate-700 text-xs font-semibold rounded-md border border-slate-200">
-            총 {channels.length}개 채널 등록됨
+            총 {channels.length}개 채널 • {categories.length}개 카테고리
           </span>
         </div>
       </div>
@@ -182,15 +231,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
 
           <div className="md:col-span-3">
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              기본 분류 카테고리
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-semibold text-slate-700">
+                기본 분류 카테고리
+              </label>
+              <button
+                type="button"
+                onClick={() => setIsCreatingCategory(true)}
+                className="text-[11px] text-slate-600 hover:text-slate-900 font-medium flex items-center gap-0.5"
+                title="새 카테고리 생성"
+              >
+                <Plus className="w-3 h-3" />
+                카테고리 추가
+              </button>
+            </div>
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value as VideoCategory)}
               className="w-full px-3 py-1.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none cursor-pointer"
             >
-              {ALL_CATEGORIES.map(cat => (
+              {categories.map(cat => (
                 <option key={cat} value={cat}>{cat}</option>
               ))}
             </select>
@@ -235,30 +295,197 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
-      {/* 2. Registered YouTube Channels List & Management */}
-      <div className="bg-white p-5 rounded-xl border border-slate-200/90 shadow-2xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+      {/* 2. Registered YouTube Channels List & Management + Category Creation */}
+      <div className="bg-white p-5 rounded-xl border border-slate-200/90 shadow-2xs space-y-4">
+        {/* Section Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+            <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
               <Tv2 className="w-3.5 h-3.5 text-slate-700" />
               모니터링 등록 채널 목록 ({filteredChannels.length}/{channels.length})
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              채널 활성화 상태를 토글하거나 카테고리를 변경하고, 불필요한 채널을 삭제할 수 있습니다.
+              채널별 카테고리를 설정하고, 새로운 카테고리를 생성하여 분류 체계를 자유롭게 확장할 수 있습니다.
             </p>
           </div>
 
-          {/* Search channel in list */}
-          <div className="relative w-full sm:w-60">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="등록된 채널 검색..."
-              value={searchChannelFilter}
-              onChange={(e) => setSearchChannelFilter(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:bg-white text-slate-900"
-            />
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            {/* Search channel in list */}
+            <div className="relative w-full sm:w-52">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="채널/핸들 검색..."
+                value={searchChannelFilter}
+                onChange={(e) => setSearchChannelFilter(e.target.value)}
+                className="w-full pl-7 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:bg-white text-slate-900"
+              />
+            </div>
+
+            {/* Create Category Button */}
+            <button
+              id="create-category-btn"
+              type="button"
+              onClick={() => setIsCreatingCategory(prev => !prev)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors flex items-center gap-1 shrink-0 ${
+                isCreatingCategory
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-200 shadow-2xs'
+              }`}
+            >
+              <FolderPlus className="w-3.5 h-3.5" />
+              <span>새 카테고리 생성</span>
+            </button>
           </div>
+        </div>
+
+        {/* Category Creation Card (Interactive Form) */}
+        {isCreatingCategory && (
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/90 shadow-2xs space-y-3 animate-fadeIn">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                <Tag className="w-3.5 h-3.5 text-slate-700" />
+                <span>새 카테고리 생성하기</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCreatingCategory(false);
+                  setNewCategoryInput('');
+                }}
+                className="text-slate-400 hover:text-slate-600 p-0.5"
+                title="닫기"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <div className="relative flex-1">
+                <input
+                  ref={newCategoryInputRef}
+                  type="text"
+                  placeholder="생성할 카테고리명 입력 (예: AI/머신러닝, 부동산/투자, 디자인/UIUX...)"
+                  value={newCategoryInput}
+                  onChange={(e) => setNewCategoryInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleCreateCategory();
+                    }
+                  }}
+                  className="w-full px-3 py-1.5 text-xs sm:text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-400 text-slate-900"
+                />
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleCreateCategory()}
+                  className="px-4 py-1.5 text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition-colors flex items-center gap-1 shadow-2xs"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>카테고리 생성</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreatingCategory(false);
+                    setNewCategoryInput('');
+                  }}
+                  className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200 rounded-lg"
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Suggestions for Category Creation */}
+            <div className="pt-2 border-t border-slate-200/70">
+              <span className="text-[11px] text-slate-500 font-medium mr-2">추천 카테고리 (클릭 시 즉시 생성):</span>
+              <div className="inline-flex flex-wrap gap-1.5 mt-1 sm:mt-0">
+                {POPULAR_CATEGORY_PRESETS.map((preset, idx) => {
+                  const alreadyExists = categories.includes(preset);
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      disabled={alreadyExists}
+                      onClick={() => handleCreateCategory(preset)}
+                      className={`px-2 py-0.5 text-[11px] rounded-md transition-colors ${
+                        alreadyExists 
+                          ? 'bg-slate-200/50 text-slate-400 cursor-not-allowed'
+                          : 'bg-white hover:bg-slate-200 text-slate-700 border border-slate-200'
+                      }`}
+                    >
+                      + {preset}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Category Filter & Badges List Toolbar */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none pt-1 border-t border-slate-100">
+          <span className="text-xs font-semibold text-slate-500 mr-1 shrink-0 flex items-center gap-1">
+            <Tag className="w-3 h-3" />
+            분류:
+          </span>
+
+          {/* ALL Filter */}
+          <button
+            type="button"
+            onClick={() => setSelectedCategoryFilter('ALL')}
+            className={`px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
+              selectedCategoryFilter === 'ALL'
+                ? 'bg-slate-900 text-white shadow-2xs'
+                : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/80'
+            }`}
+          >
+            전체 ({channels.length})
+          </button>
+
+          {/* Individual Categories Badges */}
+          {categories.map(cat => {
+            const count = channels.filter(c => c.category === cat).length;
+            const isSelected = selectedCategoryFilter === cat;
+            return (
+              <div
+                key={cat}
+                className={`group inline-flex items-center rounded-md border text-xs font-medium whitespace-nowrap transition-colors ${
+                  isSelected
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200/80'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategoryFilter(cat)}
+                  className="px-2.5 py-1 flex items-center gap-1"
+                >
+                  <span>{cat}</span>
+                  <span className={`text-[10px] ${isSelected ? 'text-slate-300' : 'text-slate-400'}`}>
+                    ({count})
+                  </span>
+                </button>
+                {/* Delete Category Button (allows deleting any category) */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCategoryToDelete(cat);
+                  }}
+                  className={`pr-1.5 pl-0.5 py-1 text-slate-400 hover:text-rose-500 transition-colors ${
+                    isSelected ? 'hover:text-rose-300' : ''
+                  }`}
+                  title={`'${cat}' 카테고리 삭제`}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            );
+          })}
         </div>
 
         {/* Channel Cards / List */}
@@ -303,15 +530,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               {/* Controls */}
               <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
                 {/* Category Changer */}
-                <select
-                  value={channel.category}
-                  onChange={(e) => onChangeChannelCategory(channel.id, e.target.value as VideoCategory)}
-                  className="px-2 py-1 text-xs font-medium rounded-md border border-slate-200 bg-slate-50 text-slate-700 cursor-pointer"
-                >
-                  {ALL_CATEGORIES.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </select>
+                <div className="flex items-center gap-1">
+                  <select
+                    value={channel.category}
+                    onChange={(e) => {
+                      if (e.target.value === '__CREATE_NEW__') {
+                        setIsCreatingCategory(true);
+                      } else {
+                        onChangeChannelCategory(channel.id, e.target.value as VideoCategory);
+                      }
+                    }}
+                    className="px-2 py-1 text-xs font-medium rounded-md border border-slate-200 bg-slate-50 text-slate-700 cursor-pointer hover:border-slate-300 focus:outline-none"
+                  >
+                    {categories.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                    <option value="__CREATE_NEW__">+ 새 카테고리 생성...</option>
+                  </select>
+                </div>
 
                 {/* Active / Pause Toggle */}
                 <button
@@ -342,7 +578,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
           {filteredChannels.length === 0 && (
             <div className="p-6 text-center text-xs text-slate-500">
-              일치하는 채널이 없습니다.
+              {searchChannelFilter || selectedCategoryFilter !== 'ALL'
+                ? '선택한 조건에 일치하는 채널이 없습니다.'
+                : '등록된 모니터링 채널이 없습니다.'}
             </div>
           )}
         </div>
@@ -456,7 +694,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
-      {/* Delete Confirmation Modal */}
+      {/* Delete Channel Confirmation Modal */}
       {channelToDelete && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-sm rounded-xl shadow-xl border border-slate-200 p-5 space-y-3.5">
@@ -485,6 +723,44 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   onDeleteChannel(channelToDelete.id);
                   setChannelToDelete(null);
                   showToast(`'${channelToDelete.title}' 채널이 삭제되었습니다.`, 'info');
+                }}
+                className="px-3.5 py-1.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-md"
+              >
+                삭제하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Category Confirmation Modal */}
+      {categoryToDelete && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-xl shadow-xl border border-slate-200 p-5 space-y-3.5">
+            <div className="flex items-center gap-2.5 text-slate-800">
+              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
+                <AlertTriangle className="w-4 h-4 text-slate-700" />
+              </div>
+              <h4 className="text-sm font-bold text-slate-900">카테고리 삭제</h4>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              <b className="text-slate-900">'{categoryToDelete}'</b> 카테고리를 삭제하시겠습니까? 해당 카테고리가 지정된 채널 및 영상은 '기타'로 자동 변경됩니다.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setCategoryToDelete(null)}
+                className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-md"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteCategory(categoryToDelete);
+                  setCategoryToDelete(null);
                 }}
                 className="px-3.5 py-1.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-md"
               >

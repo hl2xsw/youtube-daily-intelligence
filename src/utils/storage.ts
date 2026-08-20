@@ -6,6 +6,18 @@ const CHANNELS_KEY = 'yt_summary_channels_v1';
 const VIDEOS_KEY = 'yt_summary_videos_v1';
 const REPORTS_KEY = 'yt_summary_reports_v1';
 const SETTINGS_KEY = 'yt_summary_settings_v1';
+const CATEGORIES_KEY = 'yt_summary_categories_v1';
+
+export const DEFAULT_CATEGORIES: string[] = [
+  'IT/테크',
+  '경제/재테크',
+  '비즈니스/스타트업',
+  '과학/지식',
+  '뉴스/시사',
+  '자기계발/교육',
+  '라이프/엔터',
+  '기타'
+];
 
 export const DEFAULT_SETTINGS: AppSettings = {
   summaryDetailLevel: 'standard',
@@ -101,12 +113,40 @@ export function saveSettings(settings: AppSettings): void {
   }
 }
 
+export function loadCategories(): string[] {
+  try {
+    const raw = localStorage.getItem(CATEGORIES_KEY);
+    if (!raw) {
+      saveCategories(DEFAULT_CATEGORIES);
+      return DEFAULT_CATEGORIES;
+    }
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed;
+    }
+    return DEFAULT_CATEGORIES;
+  } catch (e) {
+    console.error('Failed to load categories', e);
+    return DEFAULT_CATEGORIES;
+  }
+}
+
+export function saveCategories(categories: string[]): void {
+  try {
+    localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
+  } catch (e) {
+    console.error('Failed to save categories', e);
+  }
+}
+
 export function resetAllData(): void {
   localStorage.removeItem(CHANNELS_KEY);
   localStorage.removeItem(VIDEOS_KEY);
   localStorage.removeItem(REPORTS_KEY);
   localStorage.removeItem(SETTINGS_KEY);
+  localStorage.removeItem(CATEGORIES_KEY);
   saveChannels(DEFAULT_CHANNELS);
   saveVideos(INITIAL_VIDEOS);
   saveSettings(DEFAULT_SETTINGS);
+  saveCategories(DEFAULT_CATEGORIES);
 }

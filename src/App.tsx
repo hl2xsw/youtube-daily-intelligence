@@ -16,6 +16,8 @@ import {
   saveReports, 
   loadSettings, 
   saveSettings,
+  loadCategories,
+  saveCategories,
   resetAllData
 } from './utils/storage';
 import { Header } from './components/Header';
@@ -34,6 +36,7 @@ function AppContent() {
   const [channels, setChannels] = useState<YouTubeChannel[]>([]);
   const [videos, setVideos] = useState<YouTubeVideo[]>([]);
   const [reports, setReports] = useState<DailyReport[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [settings, setSettings] = useState<AppSettings>(loadSettings());
 
   // Modal & Loading States
@@ -50,11 +53,13 @@ function AppContent() {
     const initVideos = loadVideos();
     const initReports = loadReports();
     const initSettings = loadSettings();
+    const initCategories = loadCategories();
 
     setChannels(initChannels);
     setVideos(initVideos);
     setReports(initReports);
     setSettings(initSettings);
+    setCategories(initCategories);
   }, []);
 
   // Save changes to storage
@@ -71,6 +76,43 @@ function AppContent() {
   const updateReports = (newReports: DailyReport[]) => {
     setReports(newReports);
     saveReports(newReports);
+  };
+
+  const updateCategories = (newCategories: string[]) => {
+    setCategories(newCategories);
+    saveCategories(newCategories);
+  };
+
+  const handleAddCategory = (newCategory: string): boolean => {
+    const trimmed = newCategory.trim();
+    if (!trimmed) {
+      showToast('카테고리 이름을 입력해주세요.', 'error');
+      return false;
+    }
+    if (categories.includes(trimmed)) {
+      showToast(`'${trimmed}' 카테고리는 이미 등록되어 있습니다.`, 'info');
+      return false;
+    }
+    const updated = [...categories, trimmed];
+    updateCategories(updated);
+    showToast(`새 카테고리 '${trimmed}'(이)가 생성되었습니다!`, 'success');
+    return true;
+  };
+
+  const handleDeleteCategory = (categoryToDelete: string) => {
+    const usedChannels = channels.filter(c => c.category === categoryToDelete);
+    if (usedChannels.length > 0) {
+      // Reassign to '기타'
+      const updatedChannels = channels.map(c => c.category === categoryToDelete ? { ...c, category: '기타' } : c);
+      updateChannels(updatedChannels);
+
+      const updatedVideos = videos.map(v => v.category === categoryToDelete ? { ...v, category: '기타' } : v);
+      updateVideos(updatedVideos);
+    }
+
+    const updated = categories.filter(c => c !== categoryToDelete);
+    updateCategories(updated.length > 0 ? updated : ['기타']);
+    showToast(`'${categoryToDelete}' 카테고리가 삭제되었습니다.`, 'info');
   };
 
   const updateSettings = (newSettings: Partial<AppSettings>) => {
@@ -342,6 +384,7 @@ function AppContent() {
       setVideos(loadVideos());
       setReports(loadReports());
       setSettings(loadSettings());
+      setCategories(loadCategories());
       showToast('초기 데이터로 복원되었습니다.', 'success');
     }
   };
@@ -366,6 +409,7 @@ function AppContent() {
           <DashboardView
             videos={videos}
             channels={channels}
+            categories={categories}
             onOpenDetail={(v) => setSelectedVideo(v)}
             onToggleBookmark={handleToggleBookmark}
             onReanalyze={handleAnalyzeVideo}
@@ -388,6 +432,9 @@ function AppContent() {
         {activeTab === 'settings' && (
           <SettingsView
             channels={channels}
+            categories={categories}
+            onAddCategory={handleAddCategory}
+            onDeleteCategory={handleDeleteCategory}
             onAddChannel={handleAddChannel}
             onDeleteChannel={handleDeleteChannel}
             onToggleChannelActive={handleToggleChannelActive}
@@ -403,6 +450,7 @@ function AppContent() {
       {/* Video Detail Modal */}
       <VideoDetailModal
         video={selectedVideo}
+        categories={categories}
         onClose={() => setSelectedVideo(null)}
         onToggleBookmark={handleToggleBookmark}
         onReanalyze={handleAnalyzeVideo}
