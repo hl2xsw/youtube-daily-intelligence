@@ -20,6 +20,7 @@ import {
   saveCategories,
   resetAllData
 } from './utils/storage';
+import { fetchRealChannelVideos } from './utils/youtubeService';
 import { Header } from './components/Header';
 import { DashboardView } from './components/DashboardView';
 import { AnalyticsReportView } from './components/AnalyticsReportView';
@@ -47,6 +48,44 @@ function AppContent() {
   const [analyzingVideoId, setAnalyzingVideoId] = useState<string | null>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
 
+  // Sync real videos for channels
+  const syncChannelVideos = useCallback(async (targetChannels: YouTubeChannel[], existingVideos: YouTubeVideo[]) => {
+    const active = targetChannels.filter(c => c.isActive);
+    if (active.length === 0) return existingVideos;
+
+    let updatedList = [...existingVideos];
+
+    for (const channel of active) {
+      try {
+        const realVideos = await fetchRealChannelVideos(channel);
+        if (realVideos && realVideos.length > 0) {
+          for (const v of realVideos) {
+            const existsIdx = updatedList.findIndex(e => e.videoId === v.videoId);
+            if (existsIdx >= 0) {
+              updatedList[existsIdx] = {
+                ...v,
+                isSummarized: updatedList[existsIdx].isSummarized,
+                summary: updatedList[existsIdx].summary || v.summary,
+                isBookmarked: updatedList[existsIdx].isBookmarked
+              };
+            } else {
+              updatedList = [v, ...updatedList];
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`Failed to sync videos for ${channel.title}`, err);
+      }
+    }
+
+    // Keep only videos that belong to existing channels
+    const validChannelIds = new Set(targetChannels.map(c => c.channelId));
+    const validTitles = new Set(targetChannels.map(c => c.title));
+    const cleanedList = updatedList.filter(v => validChannelIds.has(v.channelId) || validTitles.has(v.channelTitle));
+
+    return cleanedList;
+  }, []);
+
   // Initialize data on mount
   useEffect(() => {
     const initChannels = loadChannels();
@@ -55,12 +94,25 @@ function AppContent() {
     const initSettings = loadSettings();
     const initCategories = loadCategories();
 
+    const validChannelIds = new Set(initChannels.map(c => c.channelId));
+    const validTitles = new Set(initChannels.map(c => c.title));
+    const validVideos = initVideos.filter(v => validChannelIds.has(v.channelId) || validTitles.has(v.channelTitle));
+
     setChannels(initChannels);
-    setVideos(initVideos);
+    setVideos(validVideos);
     setReports(initReports);
     setSettings(initSettings);
     setCategories(initCategories);
-  }, []);
+
+    if (validVideos.length === 0 && initChannels.length > 0) {
+      syncChannelVideos(initChannels, []).then(synced => {
+        if (synced && synced.length > 0) {
+          setVideos(synced);
+          saveVideos(synced);
+        }
+      });
+    }
+  }, [syncChannelVideos]);
 
   // Save changes to storage
   const updateChannels = (newChannels: YouTubeChannel[]) => {
@@ -122,52 +174,27 @@ function AppContent() {
     showToast('설정이 성공적으로 저장되었습니다.', 'success');
   };
 
-  // 1. Sync Channels & Fetch New Videos
+  // 1. Sync Channels & Fetch Real Exact Uploaded Videos
   const handleSyncChannels = async () => {
     setIsSyncing(true);
-    showToast('등록된 채널의 최신 영상을 확인하고 있습니다...', 'info');
+    showToast('등록된 채널의 실시간 업로드 영상을 확인하고 있습니다...', 'info');
 
     try {
       const activeChannels = channels.filter(c => c.isActive);
-      let newVideosFound = 0;
-      let updatedVideosList = [...videos];
-
-      for (const channel of activeChannels) {
-        try {
-          const res = await fetch('/api/youtube/fetch-rss', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              channelId: channel.channelId,
-              channelTitle: channel.title 
-            })
-          });
-
-          const data = await res.json();
-          if (data.success && data.videos && data.videos.length > 0) {
-            for (const v of data.videos) {
-              const exists = updatedVideosList.some(existing => existing.videoId === v.videoId);
-              if (!exists) {
-                const newVideo: YouTubeVideo = {
-                  ...v,
-                  category: channel.category,
-                  createdAt: new Date().toISOString()
-                };
-                updatedVideosList = [newVideo, ...updatedVideosList];
-                newVideosFound++;
-              }
-            }
-          }
-        } catch (err) {
-          console.warn(`Failed to fetch RSS for ${channel.title}:`, err);
-        }
+      if (activeChannels.length === 0) {
+        showToast('활성화된 모니터링 채널이 없습니다.', 'info');
+        setIsSyncing(false);
+        return;
       }
 
-      updateVideos(updatedVideosList);
-      if (newVideosFound > 0) {
-        showToast(`${newVideosFound}개의 새로운 영상을 발견하여 업데이트했습니다!`, 'success');
+      const syncedList = await syncChannelVideos(channels, videos);
+      const newFound = syncedList.length - videos.length;
+      updateVideos(syncedList);
+
+      if (newFound > 0) {
+        showToast(`${newFound}개의 새로운 유튜브 업로드 영상을 동기화했습니다!`, 'success');
       } else {
-        showToast('모든 채널의 최신 영상 데이터가 최신 상태입니다.', 'success');
+        showToast(`모든 채널(${activeChannels.length}개)의 업로드 영상이 최신 상태입니다.`, 'success');
       }
     } catch (e) {
       showToast('영상 동기화 중 오류가 발생했습니다.', 'error');
@@ -221,21 +248,22 @@ function AppContent() {
     }
   };
 
-  // 3. Batch Analyze All Yesterday Videos
+  // 3. Batch Analyze All Target Videos
   const handleBatchAnalyzeYesterday = async () => {
-    const yesterdayVideos = videos.filter(v => v.isYesterday);
-    if (yesterdayVideos.length === 0) {
-      showToast('전일 업로드된 영상이 없습니다.', 'info');
+    const unsummarized = videos.filter(v => !v.isSummarized);
+    if (unsummarized.length === 0) {
+      showToast('요약할 미분석 영상이 없습니다.', 'info');
       return;
     }
 
+    const toAnalyze = unsummarized.slice(0, 10);
     setIsBatchAnalyzing(true);
-    showToast(`전일 영상 ${yesterdayVideos.length}건의 일괄 요약을 시작합니다...`, 'info');
+    showToast(`미분석 영상 ${toAnalyze.length}건의 일괄 AI 요약을 시작합니다...`, 'info');
 
     let completed = 0;
     let currentVideos = [...videos];
 
-    for (const video of yesterdayVideos) {
+    for (const video of toAnalyze) {
       try {
         const res = await fetch('/api/youtube/analyze-video', {
           method: 'POST',
@@ -267,7 +295,7 @@ function AppContent() {
 
     updateVideos(currentVideos);
     setIsBatchAnalyzing(false);
-    showToast(`전일 영상 ${completed}건의 AI 요약이 모두 완료되었습니다!`, 'success');
+    showToast(`${completed}건의 AI 영상 요약이 완료되었습니다!`, 'success');
   };
 
   // 4. Generate Daily Intelligence Comprehensive Report
@@ -282,7 +310,7 @@ function AppContent() {
     }
 
     setIsGeneratingReport(true);
-    showToast('전일 영상 종합 AI 인텔리전스 리포트를 생성하고 있습니다...', 'info');
+    showToast('업로드 영상 종합 AI 인텔리전스 리포트를 생성하고 있습니다...', 'info');
 
     try {
       const yesterdayStr = new Date(Date.now() - 86400000).toISOString().split('T')[0];
@@ -300,7 +328,7 @@ function AppContent() {
         const newReports = [data.report, ...reports];
         updateReports(newReports);
         setActiveTab('analytics');
-        showToast('전일 종합 분석 리포트가 성공적으로 생성되었습니다!', 'success');
+        showToast('종합 분석 리포트가 성공적으로 생성되었습니다!', 'success');
       } else {
         showToast('리포트 생성에 실패했습니다.', 'error');
       }
@@ -312,18 +340,46 @@ function AppContent() {
   };
 
   // Channel Management handlers
-  const handleAddChannel = (channelData: Omit<YouTubeChannel, 'id' | 'addedAt'>) => {
+  const handleAddChannel = async (channelData: Omit<YouTubeChannel, 'id' | 'addedAt'>) => {
     const newChannel: YouTubeChannel = {
       ...channelData,
       id: `ch-${Date.now().toString(36)}`,
       addedAt: new Date().toISOString()
     };
-    updateChannels([...channels, newChannel]);
+    
+    const updatedChannels = [...channels, newChannel];
+    updateChannels(updatedChannels);
+
+    // Immediately fetch exact real uploaded videos for this newly added channel
+    showToast(`'${newChannel.title}' 채널의 실시간 업로드 영상을 불러옵니다...`, 'info');
+    try {
+      const fetchedVideos = await fetchRealChannelVideos(newChannel);
+      if (fetchedVideos && fetchedVideos.length > 0) {
+        const nonExisting = fetchedVideos.filter(fv => !videos.some(ev => ev.videoId === fv.videoId));
+        const merged = [...nonExisting, ...videos];
+        updateVideos(merged);
+        showToast(`'${newChannel.title}' 채널의 실시간 업로드 영상 ${fetchedVideos.length}건을 연동했습니다!`, 'success');
+      } else {
+        showToast(`'${newChannel.title}' 채널이 추가되었습니다.`, 'success');
+      }
+    } catch {
+      showToast(`'${newChannel.title}' 채널이 추가되었습니다.`, 'success');
+    }
   };
 
   const handleDeleteChannel = (channelId: string) => {
-    const updated = channels.filter(c => c.id !== channelId);
-    updateChannels(updated);
+    const targetChannel = channels.find(c => c.id === channelId);
+    const updatedChannels = channels.filter(c => c.id !== channelId);
+    updateChannels(updatedChannels);
+
+    // Also remove videos belonging to this deleted channel
+    if (targetChannel) {
+      const updatedVideos = videos.filter(v => 
+        v.channelId !== targetChannel.channelId && 
+        v.channelTitle !== targetChannel.title
+      );
+      updateVideos(updatedVideos);
+    }
   };
 
   const handleToggleChannelActive = (channelId: string) => {
@@ -336,7 +392,7 @@ function AppContent() {
     updateChannels(updated);
   };
 
-  const handleAddPresetPack = (packChannels: any[]) => {
+  const handleAddPresetPack = async (packChannels: any[]) => {
     let addedCount = 0;
     let current = [...channels];
     for (const p of packChannels) {
@@ -357,7 +413,9 @@ function AppContent() {
       }
     }
     updateChannels(current);
-    showToast(`프리셋 패키지에서 ${addedCount}개 채널이 추가되었습니다!`, 'success');
+    showToast(`프리셋에서 ${addedCount}개 채널이 추가되었습니다. 영상을 불러옵니다...`, 'success');
+    const synced = await syncChannelVideos(current, videos);
+    updateVideos(synced);
   };
 
   // Video interaction handlers

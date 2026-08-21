@@ -54,13 +54,16 @@ export function loadVideos(): YouTubeVideo[] {
   try {
     const raw = localStorage.getItem(VIDEOS_KEY);
     if (!raw) {
-      saveVideos(INITIAL_VIDEOS);
-      return INITIAL_VIDEOS;
+      return [];
     }
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed;
+    }
+    return [];
   } catch (e) {
     console.error('Failed to load videos', e);
-    return INITIAL_VIDEOS;
+    return [];
   }
 }
 

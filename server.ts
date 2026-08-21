@@ -32,7 +32,7 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-// 2. Lookup YouTube Channel (via handle or URL or ID)
+// 2. Lookup YouTube Channel (via handle or URL or ID or search query)
 app.post('/api/youtube/lookup-channel', async (req, res) => {
   try {
     const { input } = req.body;
@@ -43,40 +43,135 @@ app.post('/api/youtube/lookup-channel', async (req, res) => {
     let cleanInput = input.trim();
     let channelId = '';
     let handle = '';
-    let guessedTitle = cleanInput;
+    let title = cleanInput;
+    let description = '';
+    let thumbnailUrl = '';
+    let subscriberCount = '구독자 확인중';
 
-    if (cleanInput.includes('youtube.com/')) {
-      const url = new URL(cleanInput.startsWith('http') ? cleanInput : `https://${cleanInput}`);
-      const pathParts = url.pathname.split('/').filter(Boolean);
-      if (pathParts[0] === 'channel' && pathParts[1]) {
-        channelId = pathParts[1];
-      } else if (pathParts[0]?.startsWith('@')) {
-        handle = pathParts[0];
-        guessedTitle = handle.replace('@', '');
-      } else if (pathParts[0] === 'c' || pathParts[0] === 'user') {
-        guessedTitle = pathParts[1] || pathParts[0];
-      }
-    } else if (cleanInput.startsWith('@')) {
-      handle = cleanInput;
-      guessedTitle = cleanInput.replace('@', '');
-    } else if (cleanInput.startsWith('UC') && cleanInput.length >= 22) {
+    // 1) Check if already channel ID (UC...)
+    if (cleanInput.startsWith('UC') && cleanInput.length >= 22) {
       channelId = cleanInput;
     } else {
-      guessedTitle = cleanInput;
+      // 2) Parse handle or URL
+      let targetUrl = '';
+      if (cleanInput.includes('youtube.com/')) {
+        const parsed = new URL(cleanInput.startsWith('http') ? cleanInput : `https://${cleanInput}`);
+        const parts = parsed.pathname.split('/').filter(Boolean);
+        if (parts[0] === 'channel' && parts[1]) {
+          channelId = parts[1];
+        } else if (parts[0]?.startsWith('@')) {
+          handle = parts[0];
+          targetUrl = `https://www.youtube.com/${handle}`;
+        } else if (parts[0]) {
+          targetUrl = `https://www.youtube.com/${parts.join('/')}`;
+        }
+      } else if (cleanInput.startsWith('@')) {
+        handle = cleanInput;
+        targetUrl = `https://www.youtube.com/${handle}`;
+      } else {
+        // Treat as handle or search query
+        handle = `@${cleanInput.replace(/^@/, '')}`;
+        targetUrl = `https://www.youtube.com/${handle}`;
+      }
+
+      // Try fetching YouTube Channel page to extract real channelId
+      if (targetUrl && !channelId) {
+        try {
+          const ytRes = await fetch(targetUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
+            }
+          });
+
+          if (ytRes.ok) {
+            const html = await ytRes.text();
+            
+            // Extract channel ID
+            const chIdMatch = html.match(/<meta itemprop="identifier" content="(UC[a-zA-Z0-9_-]{22})"/i) ||
+                              html.match(/<meta itemprop="channelId" content="(UC[a-zA-Z0-9_-]{22})"/i) ||
+                              html.match(/youtube\.com\/channel\/(UC[a-zA-Z0-9_-]{22})/i) ||
+                              html.match(/"channelId":"(UC[a-zA-Z0-9_-]{22})"/i) ||
+                              html.match(/"browseId":"(UC[a-zA-Z0-9_-]{22})"/i) ||
+                              html.match(/"externalId":"(UC[a-zA-Z0-9_-]{22})"/i);
+            
+            if (chIdMatch) {
+              channelId = chIdMatch[1];
+            }
+
+            // Extract title
+            const ogTitle = html.match(/<meta property="og:title" content="([^"]+)"/i) ||
+                            html.match(/<title>([^<]+) - YouTube<\/title>/i);
+            if (ogTitle) {
+              title = ogTitle[1].replace(/ - YouTube$/i, '').trim();
+            }
+
+            // Extract thumbnail
+            const ogImg = html.match(/<meta property="og:image" content="([^"]+)"/i) ||
+                          html.match(/"avatar":\s*\{\s*"thumbnails":\s*\[\s*\{\s*"url":\s*"([^"]+)"/i);
+            if (ogImg) {
+              thumbnailUrl = ogImg[1];
+            }
+
+            // Extract description
+            const ogDesc = html.match(/<meta property="og:description" content="([^"]+)"/i);
+            if (ogDesc) {
+              description = ogDesc[1].trim();
+            }
+
+            // Extract subscriber count text
+            const subMatch = html.match(/"subscriberCountText":\s*\{\s*"simpleText":\s*"([^"]+)"/i) ||
+                             html.match(/"subscriberCountText":\s*\{\s*"accessibility":\s*\{\s*"accessibilityData":\s*\{\s*"label":\s*"([^"]+)"/i);
+            if (subMatch) {
+              subscriberCount = subMatch[1];
+            }
+          }
+        } catch (fetchErr) {
+          console.warn('Direct YouTube channel page fetch failed:', fetchErr);
+        }
+      }
+
+      // If still no channelId, try YouTube Search
+      if (!channelId) {
+        try {
+          const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(cleanInput)}`;
+          const searchRes = await fetch(searchUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
+            }
+          });
+          if (searchRes.ok) {
+            const searchHtml = await searchRes.text();
+            const chMatch = searchHtml.match(/"channelRenderer":\s*\{\s*"channelId":\s*"(UC[a-zA-Z0-9_-]{22})"/i) ||
+                            searchHtml.match(/"browseEndpoint":\s*\{\s*"browseId":\s*"(UC[a-zA-Z0-9_-]{22})"/i);
+            if (chMatch) {
+              channelId = chMatch[1];
+              const titleMatch = searchHtml.match(/"channelRenderer":\s*\{\s*"channelId":\s*"[^"]+",\s*"title":\s*\{\s*"simpleText":\s*"([^"]+)"/i);
+              if (titleMatch) title = titleMatch[1];
+            }
+          }
+        } catch (searchErr) {
+          console.warn('YouTube search fetch failed:', searchErr);
+        }
+      }
     }
 
-    // Default placeholder channel data if live resolution fails or simulated
-    const result = {
-      channelId: channelId || `UC${Math.random().toString(36).substring(2, 12)}_${Date.now().toString(36)}`,
-      title: guessedTitle,
-      handle: handle || `@${guessedTitle.toLowerCase().replace(/[^a-z0-9_]/g, '')}`,
-      description: `${guessedTitle} 채널의 최신 영상 요약 및 분석 모니터링`,
-      thumbnailUrl: `https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80`,
-      subscriberCount: '구독자 확인중',
+    if (!channelId) {
+      channelId = `UC_${cleanInput.replace(/[^a-zA-Z0-9_]/g, '')}`;
+    }
+
+    const channelData = {
+      channelId,
+      title: title || cleanInput,
+      handle: handle || (cleanInput.startsWith('@') ? cleanInput : `@${cleanInput.toLowerCase().replace(/[^a-z0-9_]/g, '')}`),
+      description: description || `${title} 채널의 최신 영상 요약 및 모니터링`,
+      thumbnailUrl: thumbnailUrl || `https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80`,
+      subscriberCount: subscriberCount || '구독자 정보 연동됨',
       category: 'IT/테크'
     };
 
-    res.json({ success: true, channel: result });
+    res.json({ success: true, channel: channelData });
   } catch (error: any) {
     console.error('Channel lookup error:', error);
     res.status(500).json({ error: error.message || '채널 정보를 확인하는데 실패했습니다.' });
@@ -97,13 +192,15 @@ app.post('/api/youtube/fetch-rss', async (req, res) => {
     
     try {
       const response = await fetch(rssUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+        headers: { 
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
       });
       if (response.ok) {
         feedXml = await response.text();
       }
     } catch (fetchErr) {
-      console.warn('Live RSS fetch failed or blocked, generating latest video candidates:', fetchErr);
+      console.warn('Live RSS fetch failed:', fetchErr);
     }
 
     const videos: any[] = [];
@@ -115,26 +212,32 @@ app.post('/api/youtube/fetch-rss', async (req, res) => {
         const videoIdMatch = entry.match(/<yt:videoId>([^<]+)<\/yt:videoId>/);
         const titleMatch = entry.match(/<title>([^<]+)<\/title>/);
         const publishedMatch = entry.match(/<published>([^<]+)<\/published>/);
-        const descMatch = entry.match(/<media:description>([^<]*)<\/media:description>/);
+        const descMatch = entry.match(/<media:description>([^<]*)<\/media:description>/s);
         const thumbMatch = entry.match(/<media:thumbnail url="([^"]+)"/);
+        const viewsMatch = entry.match(/<media:statistics views="(\d+)"/);
 
         if (videoIdMatch && titleMatch && publishedMatch) {
-          const videoId = videoIdMatch[1];
+          const videoId = videoIdMatch[1].trim();
           const pubDate = new Date(publishedMatch[1]);
           const now = new Date();
-          const diffHours = (now.getTime() - pubDate.getTime()) / (1000 * 60 * 60);
-          const isYesterday = diffHours >= 12 && diffHours <= 60; // broad yesterday window
+          const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000);
+          
+          const pubTime = pubDate.getTime();
+          const isYesterday = (pubTime >= startOfYesterday.getTime() && pubTime < startOfToday.getTime()) ||
+                              ((now.getTime() - pubTime) / (1000 * 60 * 60) >= 10 && (now.getTime() - pubTime) / (1000 * 60 * 60) <= 48);
 
           videos.push({
-            id: `vid-${videoId}`,
+            id: `yt-${videoId}`,
             videoId,
             channelId,
             channelTitle: channelTitle || 'YouTube Channel',
-            title: titleMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>'),
-            description: descMatch ? descMatch[1].substring(0, 300) : '',
+            title: titleMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+            description: descMatch ? descMatch[1].trim() : '',
             thumbnailUrl: thumbMatch ? thumbMatch[1] : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
             publishedAt: pubDate.toISOString(),
             videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
+            viewCount: viewsMatch ? parseInt(viewsMatch[1], 10) : undefined,
             isYesterday,
             isSummarized: false
           });

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { YouTubeChannel, VideoCategory, AppSettings } from '../types';
 import { CHANNEL_PRESET_PACKS } from '../data/defaultChannels';
+import { lookupYouTubeChannel } from '../utils/youtubeService';
 import { 
   Plus, 
   Trash2, 
@@ -13,14 +14,14 @@ import {
   Download, 
   Upload, 
   RotateCcw, 
-  ExternalLink,
-  Search,
-  CheckCircle2,
-  AlertTriangle,
-  PackagePlus,
-  FolderPlus,
-  Tag,
-  X
+  ExternalLink, 
+  Search, 
+  CheckCircle2, 
+  AlertTriangle, 
+  PackagePlus, 
+  FolderPlus, 
+  Tag, 
+  X 
 } from 'lucide-react';
 import { useToast } from './Toast';
 
@@ -120,18 +121,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
     setIsLookingUp(true);
     try {
-      const res = await fetch('/api/youtube/lookup-channel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: channelInput.trim() })
-      });
+      let channelData: any = null;
 
-      const data = await res.json();
-      if (data.success && data.channel) {
+      // 1. Try server endpoint first
+      try {
+        const res = await fetch('/api/youtube/lookup-channel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ input: channelInput.trim() })
+        });
+        const data = await res.json();
+        if (data.success && data.channel) {
+          channelData = data.channel;
+        }
+      } catch {
+        // server endpoint unavailable, continue to client lookup
+      }
+
+      // 2. Client-side fallback if server didn't return
+      if (!channelData) {
+        channelData = await lookupYouTubeChannel(channelInput.trim());
+      }
+
+      if (channelData) {
         // Check if already exists
         const exists = channels.some(c => 
-          c.channelId === data.channel.channelId || 
-          (c.handle && c.handle.toLowerCase() === data.channel.handle.toLowerCase())
+          c.channelId === channelData.channelId || 
+          (c.handle && c.handle.toLowerCase() === channelData.handle?.toLowerCase())
         );
 
         if (exists) {
@@ -141,20 +157,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         }
 
         onAddChannel({
-          channelId: data.channel.channelId,
-          title: data.channel.title,
-          handle: data.channel.handle,
-          description: data.channel.description,
-          thumbnailUrl: data.channel.thumbnailUrl,
+          channelId: channelData.channelId,
+          title: channelData.title,
+          handle: channelData.handle,
+          description: channelData.description,
+          thumbnailUrl: channelData.thumbnailUrl,
           category: selectedCategory,
           isActive: true,
-          subscriberCount: data.channel.subscriberCount
+          subscriberCount: channelData.subscriberCount
         });
 
         setChannelInput('');
-        showToast(`'${data.channel.title}' 채널이 성공적으로 추가되었습니다!`, 'success');
+        showToast(`'${channelData.title}' 채널이 성공적으로 추가되었습니다!`, 'success');
       } else {
-        showToast(data.error || '채널 정보를 찾을 수 없습니다.', 'error');
+        showToast('유튜브 채널 정보를 찾을 수 없습니다. @핸들 또는 전체 URL을 다시 확인해주세요.', 'error');
       }
     } catch (err: any) {
       // Fallback manual addition
@@ -170,7 +186,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         subscriberCount: '신규 등록'
       });
       setChannelInput('');
-      showToast(`'${title}' 채널이 추가되었습니다.`, 'success');
+      showToast(`'${title}' 채널이 등록되었습니다.`, 'success');
     } finally {
       setIsLookingUp(false);
     }
