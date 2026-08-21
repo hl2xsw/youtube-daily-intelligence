@@ -20,7 +20,7 @@ import {
   saveCategories,
   resetAllData
 } from './utils/storage';
-import { fetchRealChannelVideos } from './utils/youtubeService';
+import { fetchRealChannelVideos, searchAndSummarize24hVideos } from './utils/youtubeService';
 import { Header } from './components/Header';
 import { DashboardView } from './components/DashboardView';
 import { AnalyticsReportView } from './components/AnalyticsReportView';
@@ -44,6 +44,7 @@ function AppContent() {
   const [selectedVideo, setSelectedVideo] = useState<YouTubeVideo | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSearching24h, setIsSearching24h] = useState(false);
   const [isBatchAnalyzing, setIsBatchAnalyzing] = useState(false);
   const [analyzingVideoId, setAnalyzingVideoId] = useState<string | null>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
@@ -200,6 +201,40 @@ function AppContent() {
       showToast('영상 동기화 중 오류가 발생했습니다.', 'error');
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  // 1-1. Search & AI Summarize 24h Videos
+  const handleSearch24hVideos = async () => {
+    const activeChannels = channels.filter(c => c.isActive);
+    if (activeChannels.length === 0) {
+      showToast('활성화된 모니터링 채널이 없습니다. [채널 설정] 탭에서 채널을 확인해주세요.', 'info');
+      return;
+    }
+
+    setIsSearching24h(true);
+    showToast('등록 채널의 최근 24시간 업로드 영상 검색 및 AI 요약을 시작합니다...', 'info');
+
+    try {
+      const result = await searchAndSummarize24hVideos(activeChannels);
+      if (result && result.videos && result.videos.length > 0) {
+        const existingMap = new Map<string, YouTubeVideo>(videos.map(v => [v.id, v]));
+        for (const v of result.videos) {
+          existingMap.set(v.id, v);
+        }
+        const merged: YouTubeVideo[] = Array.from(existingMap.values()).sort(
+          (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+        );
+        updateVideos(merged);
+        const summarizedCount = result.videos.filter(r => r.isSummarized).length;
+        showToast(`최근 24시간 업로드 영상 ${result.videos.length}건 검색 및 ${summarizedCount}건 AI 요약 완료!`, 'success');
+      } else {
+        showToast('최근 24시간 이내에 새로 업로드된 영상이 없습니다.', 'info');
+      }
+    } catch (e) {
+      showToast('24시간 영상 검색 및 분석 중 오류가 발생했습니다.', 'error');
+    } finally {
+      setIsSearching24h(false);
     }
   };
 
@@ -447,7 +482,9 @@ function AppContent() {
     }
   };
 
+  const now = Date.now();
   const totalYesterdayVideosCount = videos.filter(v => v.isYesterday).length;
+  const total24hVideosCount = videos.filter(v => v.isWithin24h || (now - new Date(v.publishedAt).getTime()) <= 24 * 60 * 60 * 1000).length;
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] text-slate-900 flex flex-col font-sans antialiased selection:bg-slate-200 selection:text-slate-900">
@@ -457,8 +494,11 @@ function AppContent() {
         setActiveTab={setActiveTab}
         onSyncChannels={handleSyncChannels}
         isSyncing={isSyncing}
+        onSearch24hVideos={handleSearch24hVideos}
+        isSearching24h={isSearching24h}
         onOpenExportModal={() => setIsExportModalOpen(true)}
         totalYesterdayCount={totalYesterdayVideosCount}
+        total24hCount={total24hVideosCount}
       />
 
       {/* Main Content Body */}
@@ -472,8 +512,10 @@ function AppContent() {
             onToggleBookmark={handleToggleBookmark}
             onReanalyze={handleAnalyzeVideo}
             onBatchAnalyzeYesterday={handleBatchAnalyzeYesterday}
+            onSearch24hVideos={handleSearch24hVideos}
             onOpenExportModal={() => setIsExportModalOpen(true)}
             isBatchAnalyzing={isBatchAnalyzing}
+            isSearching24h={isSearching24h}
             analyzingVideoId={analyzingVideoId}
           />
         )}

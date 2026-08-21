@@ -1,6 +1,6 @@
 {
   "name": "유튜브 일일 영상 요약 & 분석 대시보드",
-  "description": "설정된 유튜브 채널의 전일 업로드 영상 확인, AI 핵심 주제 및 주요 포인트 요약, 문서 및 엑셀(CSV) 저장, 카테고리별 필터링, 통계 시각화 및 자동 분석 리포트 생성 프로그램",
+  "description": "설정된 유튜브 채널의 최근 24시간 및 전일 업로드 영상 실시간 검색, Gemini AI 핵심 주제/주요 포인트 자동 요약, 문서 및 엑셀(CSV) 내보내기, 카테고리 필터링 및 일일 인텔리전스 리포트 생성 프로그램",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

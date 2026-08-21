@@ -30,8 +30,10 @@ interface DashboardViewProps {
   onToggleBookmark: (videoId: string) => void;
   onReanalyze: (video: YouTubeVideo) => void;
   onBatchAnalyzeYesterday: () => void;
+  onSearch24hVideos: () => void;
   onOpenExportModal: () => void;
   isBatchAnalyzing: boolean;
+  isSearching24h?: boolean;
   analyzingVideoId: string | null;
 }
 
@@ -43,8 +45,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onToggleBookmark,
   onReanalyze,
   onBatchAnalyzeYesterday,
+  onSearch24hVideos,
   onOpenExportModal,
   isBatchAnalyzing,
+  isSearching24h = false,
   analyzingVideoId
 }) => {
   const { showToast } = useToast();
@@ -57,18 +61,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     ];
   }, [categories]);
 
-  // Filters State
+  // Filters State - Default to 24hours / yesterday if available, else 'all'
   const [filters, setFilters] = useState<FilterState>({
     category: 'ALL',
     channelId: 'ALL',
-    dateFilter: 'yesterday', // Default to yesterday videos as per user requirement
+    dateFilter: '24hours',
     searchQuery: '',
     statusFilter: 'all'
   });
 
   // Calculate quick metrics
+  const within24hVideos = useMemo(() => {
+    const now = Date.now();
+    return videos.filter(v => v.isWithin24h || (now - new Date(v.publishedAt).getTime()) <= 24 * 60 * 60 * 1000);
+  }, [videos]);
+
   const yesterdayVideos = useMemo(() => videos.filter(v => v.isYesterday), [videos]);
-  const summarizedYesterdayCount = useMemo(() => yesterdayVideos.filter(v => v.isSummarized).length, [yesterdayVideos]);
+  const summarizedCount = useMemo(() => videos.filter(v => v.isSummarized).length, [videos]);
   const activeChannelsCount = useMemo(() => channels.filter(c => c.isActive).length, [channels]);
 
   // Filtered Videos
@@ -85,15 +94,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       }
 
       // Date filter
-      if (filters.dateFilter === 'yesterday' && !video.isYesterday) {
-        return false;
+      const now = Date.now();
+      const pubTime = new Date(video.publishedAt).getTime();
+      const diffHours = (now - pubTime) / (1000 * 60 * 60);
+
+      if (filters.dateFilter === '24hours') {
+        if (!video.isWithin24h && diffHours > 24) return false;
+      } else if (filters.dateFilter === 'yesterday') {
+        if (!video.isYesterday) return false;
       } else if (filters.dateFilter === 'recent3days') {
-        const pubTime = new Date(video.publishedAt).getTime();
-        const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000;
+        const threeDaysAgo = now - 3 * 24 * 60 * 60 * 1000;
         if (pubTime < threeDaysAgo) return false;
       } else if (filters.dateFilter === 'recent7days') {
-        const pubTime = new Date(video.publishedAt).getTime();
-        const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
         if (pubTime < sevenDaysAgo) return false;
       }
 
@@ -119,23 +132,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     });
   }, [videos, filters]);
 
-  // Quick download of all yesterday's summaries in markdown
+  // Quick download of all yesterday/24h summaries in markdown
   const handleDownloadYesterdayBatch = () => {
-    if (yesterdayVideos.length === 0) {
-      showToast('전일 업로드된 영상이 없습니다.', 'info');
+    const targetVideos = filteredVideos.length > 0 ? filteredVideos : videos;
+    if (targetVideos.length === 0) {
+      showToast('저장할 영상이 없습니다.', 'info');
       return;
     }
-    const dateStr = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-    const md = generateBatchMarkdown(yesterdayVideos, `${dateStr} 전일 유튜브 일괄 요약집`);
-    downloadFile(`유튜브_전일영상_일괄요약집_${dateStr}.md`, md, 'text/markdown;charset=utf-8');
-    showToast(`전일 영상 ${yesterdayVideos.length}건의 일괄 요약집(.md)이 저장되었습니다.`, 'success');
+    const dateStr = new Date().toISOString().split('T')[0];
+    const md = generateBatchMarkdown(targetVideos, `${dateStr} 유튜브 핵심 요약집`);
+    downloadFile(`유튜브_영상_핵심요약집_${dateStr}.md`, md, 'text/markdown;charset=utf-8');
+    showToast(`영상 ${targetVideos.length}건의 일괄 요약집(.md)이 저장되었습니다.`, 'success');
   };
 
   const resetFilters = () => {
     setFilters({
       category: 'ALL',
       channelId: 'ALL',
-      dateFilter: 'yesterday',
+      dateFilter: 'all',
       searchQuery: '',
       statusFilter: 'all'
     });
@@ -145,58 +159,64 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     <div className="space-y-6">
       {/* 1. Quick KPI Statistics Banner */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {/* Metric 1: Yesterday Videos */}
-        <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-700 shrink-0">
-            <Tv2 className="w-5 h-5" />
+        {/* Metric 1: 24h Videos */}
+        <div 
+          onClick={() => setFilters(prev => ({ ...prev, dateFilter: '24hours' }))}
+          className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center gap-3.5 cursor-pointer hover:border-slate-400 transition-colors"
+        >
+          <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center text-amber-700 shrink-0">
+            <Tv2 className="w-5 h-5 text-amber-600" />
           </div>
           <div>
-            <div className="text-xs font-medium text-slate-500">전일(어제) 업로드 영상</div>
+            <div className="text-xs font-medium text-slate-500">최근 24시간 영상</div>
             <div className="flex items-baseline gap-1.5 mt-0.5">
-              <span className="text-2xl font-bold text-slate-900">{yesterdayVideos.length}</span>
-              <span className="text-xs text-slate-500">개 확인됨</span>
+              <span className="text-2xl font-bold text-slate-900">{within24hVideos.length}</span>
+              <span className="text-xs text-slate-500">개 감지</span>
             </div>
           </div>
         </div>
 
-        {/* Metric 2: AI Summarized Count */}
-        <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center gap-3.5">
+        {/* Metric 2: Yesterday Videos */}
+        <div 
+          onClick={() => setFilters(prev => ({ ...prev, dateFilter: 'yesterday' }))}
+          className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center gap-3.5 cursor-pointer hover:border-slate-400 transition-colors"
+        >
           <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-700 shrink-0">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+            <Clock className="w-5 h-5 text-slate-600" />
+          </div>
+          <div>
+            <div className="text-xs font-medium text-slate-500">전일(어제) 업로드</div>
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className="text-2xl font-bold text-slate-900">{yesterdayVideos.length}</span>
+              <span className="text-xs text-slate-500">개 확인</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Metric 3: AI Summarized Count */}
+        <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0">
+            <CheckCircle2 className="w-5 h-5" />
           </div>
           <div>
             <div className="text-xs font-medium text-slate-500">AI 요약 완료</div>
             <div className="flex items-baseline gap-1.5 mt-0.5">
-              <span className="text-2xl font-bold text-slate-900">{summarizedYesterdayCount}</span>
-              <span className="text-xs text-slate-500">/ {yesterdayVideos.length}개 ({yesterdayVideos.length ? Math.round((summarizedYesterdayCount / yesterdayVideos.length) * 100) : 0}%)</span>
+              <span className="text-2xl font-bold text-slate-900">{summarizedCount}</span>
+              <span className="text-xs text-slate-500">/ {videos.length}개 ({videos.length ? Math.round((summarizedCount / videos.length) * 100) : 0}%)</span>
             </div>
           </div>
         </div>
 
-        {/* Metric 3: Active Monitoring Channels */}
+        {/* Metric 4: Active Monitoring Channels */}
         <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-700 shrink-0">
-            <Layers className="w-5 h-5 text-blue-600" />
+          <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+            <Layers className="w-5 h-5" />
           </div>
           <div>
             <div className="text-xs font-medium text-slate-500">모니터링 채널</div>
             <div className="flex items-baseline gap-1.5 mt-0.5">
               <span className="text-2xl font-bold text-slate-900">{activeChannelsCount}</span>
-              <span className="text-xs text-slate-500">개 추적 중</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Metric 4: Average Reading Time Saved */}
-        <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-700 shrink-0">
-            <Clock className="w-5 h-5 text-slate-600" />
-          </div>
-          <div>
-            <div className="text-xs font-medium text-slate-500">절약된 시청 시간</div>
-            <div className="flex items-baseline gap-1.5 mt-0.5">
-              <span className="text-2xl font-bold text-slate-900">~2.5</span>
-              <span className="text-xs text-slate-500">시간 절약 (3분 요약)</span>
+              <span className="text-xs text-slate-500">개 활성화</span>
             </div>
           </div>
         </div>
@@ -206,35 +226,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <div className="bg-slate-900 rounded-xl p-4 sm:p-5 text-white shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-slate-800">
         <div>
           <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 text-xs font-semibold border border-slate-700">
-              전일 영상 관리
+            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-xs font-semibold border border-emerald-500/30">
+              실시간 24H 동기화
             </span>
             <h2 className="text-sm sm:text-base font-bold text-white tracking-tight">
-              전일 업로드 영상 핵심 요약 및 일괄 저장
+              24시간 이내 최신 영상 검색 및 Gemini AI 핵심 요약
             </h2>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
-            등록된 채널의 어제자 영상을 AI로 분석하고 마크다운/워드 문서 또는 엑셀(CSV)로 저장하세요.
+          <p className="text-xs text-slate-300 mt-1">
+            설정된 모든 채널의 최신 영상을 즉시 스캔하여 핵심 주제, 주요 사실 3~5개, 상세 줄거리를 자동 요약합니다.
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
-          {/* Batch Summarize */}
+          {/* Primary 24h Search Button */}
           <button
-            id="batch-analyze-btn"
-            onClick={onBatchAnalyzeYesterday}
-            disabled={isBatchAnalyzing}
-            className="px-3.5 py-2 text-xs font-semibold bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-900 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 disabled:opacity-50"
+            id="search-24h-btn"
+            onClick={onSearch24hVideos}
+            disabled={isSearching24h || isBatchAnalyzing}
+            className="px-4 py-2 text-xs font-bold bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-950 rounded-lg shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50"
           >
-            <Sparkles className={`w-3.5 h-3.5 ${isBatchAnalyzing ? 'animate-spin text-slate-900' : 'text-slate-700'}`} />
-            <span>{isBatchAnalyzing ? '일괄 분석 중...' : '전일 영상 일괄 AI 분석'}</span>
+            <Sparkles className={`w-3.5 h-3.5 text-amber-600 ${isSearching24h ? 'animate-spin' : ''}`} />
+            <span>{isSearching24h ? '24H 영상 검색 및 요약 중...' : '24시간 영상 검색 & AI 요약'}</span>
           </button>
 
           {/* Batch Markdown Dossier */}
           <button
             id="batch-download-md-btn"
             onClick={handleDownloadYesterdayBatch}
-            className="px-3.5 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 active:bg-slate-800 text-slate-200 border border-slate-700 rounded-lg transition-colors flex items-center gap-1.5"
+            className="px-3 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 active:bg-slate-800 text-slate-200 border border-slate-700 rounded-lg transition-colors flex items-center gap-1.5"
           >
             <FileCode className="w-3.5 h-3.5 text-slate-300" />
             <span>요약집 (.md)</span>
@@ -244,7 +264,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <button
             id="batch-export-csv-btn"
             onClick={onOpenExportModal}
-            className="px-3.5 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 active:bg-slate-800 text-slate-200 border border-slate-700 rounded-lg transition-colors flex items-center gap-1.5"
+            className="px-3 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 active:bg-slate-800 text-slate-200 border border-slate-700 rounded-lg transition-colors flex items-center gap-1.5"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
             <span>엑셀 / CSV</span>
@@ -300,12 +320,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <select
             value={filters.dateFilter}
             onChange={(e) => setFilters(prev => ({ ...prev, dateFilter: e.target.value as any }))}
-            className="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-slate-200 bg-slate-50 text-slate-800 cursor-pointer hover:border-slate-300 focus:outline-none"
+            className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 bg-slate-50 text-slate-900 cursor-pointer hover:border-slate-300 focus:outline-none"
           >
-            <option value="yesterday">📅 전일 영상만 (기본)</option>
+            <option value="24hours">⚡ 최근 24시간 ({within24hVideos.length}개)</option>
+            <option value="yesterday">📅 전일(어제) 영상 ({yesterdayVideos.length}개)</option>
             <option value="recent3days">최근 3일</option>
             <option value="recent7days">최근 7일</option>
-            <option value="all">전체 수집 영상</option>
+            <option value="all">전체 수집 영상 ({videos.length}개)</option>
           </select>
 
           {/* Channel Filter */}
@@ -314,7 +335,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             onChange={(e) => setFilters(prev => ({ ...prev, channelId: e.target.value }))}
             className="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-slate-200 bg-slate-50 text-slate-800 cursor-pointer hover:border-slate-300 focus:outline-none max-w-[140px] truncate"
           >
-            <option value="ALL">전체 채널</option>
+            <option value="ALL">전체 채널 ({channels.length})</option>
             {channels.map(ch => (
               <option key={ch.id} value={ch.channelId}>{ch.title}</option>
             ))}
@@ -333,7 +354,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </select>
 
           {/* Reset Filters */}
-          {(filters.category !== 'ALL' || filters.channelId !== 'ALL' || filters.dateFilter !== 'yesterday' || filters.searchQuery || filters.statusFilter !== 'all') && (
+          {(filters.category !== 'ALL' || filters.channelId !== 'ALL' || filters.dateFilter !== 'all' || filters.searchQuery || filters.statusFilter !== 'all') && (
             <button
               onClick={resetFilters}
               title="필터 초기화"
@@ -367,11 +388,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* 5. Results Count */}
+      {/* 5. Results Count Banner */}
       <div className="flex items-center justify-between text-xs text-slate-500 px-0.5">
-        <div>
-          총 <span className="text-slate-900 font-semibold">{filteredVideos.length}</span>개의 영상
-          {filters.dateFilter === 'yesterday' && <span className="ml-1 text-slate-600">(전일 업로드 영상 필터 적용)</span>}
+        <div className="flex items-center gap-2">
+          <span>총 <strong className="text-slate-900 font-semibold">{filteredVideos.length}</strong>개의 영상 표시 중</span>
+          {filters.dateFilter === '24hours' && (
+            <span className="px-2 py-0.5 bg-amber-50 text-amber-700 font-medium rounded border border-amber-200/80">
+              최근 24시간 필터
+            </span>
+          )}
+          {filters.dateFilter === 'yesterday' && (
+            <span className="px-2 py-0.5 bg-slate-100 text-slate-700 font-medium rounded border border-slate-200">
+              전일(어제) 업로드 필터
+            </span>
+          )}
         </div>
       </div>
 
@@ -385,27 +415,41 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               onOpenDetail={onOpenDetail}
               onToggleBookmark={onToggleBookmark}
               onReanalyze={onReanalyze}
-              isAnalyzing={analyzingVideoId === video.id || isBatchAnalyzing}
+              isAnalyzing={analyzingVideoId === video.id || isBatchAnalyzing || isSearching24h}
             />
           ))}
         </div>
       ) : (
         /* Empty State */
-        <div className="bg-white rounded-xl border border-dashed border-slate-200 p-12 text-center">
-          <div className="w-12 h-12 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center mx-auto mb-3">
-            <Search className="w-5 h-5" />
+        <div className="bg-white rounded-xl border border-slate-200 p-8 sm:p-12 text-center shadow-2xs">
+          <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-3">
+            <Tv2 className="w-6 h-6" />
           </div>
-          <h3 className="text-sm font-bold text-slate-800">조건에 일치하는 영상이 없습니다</h3>
-          <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-            필터 조건을 변경하거나 검색어를 재입력해보세요. 전일 업로드 영상이 아직 없다면 [새로고침]을 클릭하여 최신 영상을 동기화하세요.
+          <h3 className="text-base font-bold text-slate-900">
+            {filters.dateFilter === 'yesterday' || filters.dateFilter === '24hours'
+              ? '최근 24시간 / 전일 업로드된 영상이 아직 감지되지 않았습니다'
+              : '조건에 일치하는 영상이 없습니다'}
+          </h3>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1.5 max-w-md mx-auto leading-relaxed">
+            등록된 채널의 실시간 업로드 피드를 즉시 검색하고 Gemini AI로 핵심 내용을 요약해보세요.
           </p>
-          <button
-            onClick={resetFilters}
-            className="mt-4 px-3.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors inline-flex items-center gap-1.5"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            필터 초기화
-          </button>
+          
+          <div className="mt-5 flex items-center justify-center gap-2.5 flex-wrap">
+            <button
+              onClick={onSearch24hVideos}
+              disabled={isSearching24h}
+              className="px-4 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-2xs transition-colors inline-flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>{isSearching24h ? '24시간 영상 검색 및 요약 중...' : '24시간 최신 영상 실시간 검색 & 요약'}</span>
+            </button>
+            <button
+              onClick={() => setFilters(prev => ({ ...prev, dateFilter: 'all' }))}
+              className="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors inline-flex items-center gap-1.5"
+            >
+              전체 수집 영상 ({videos.length}개) 보기
+            </button>
+          </div>
         </div>
       )}
     </div>

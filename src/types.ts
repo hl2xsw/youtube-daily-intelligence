@@ -42,6 +42,7 @@ export interface YouTubeVideo {
   videoUrl: string;
   category: VideoCategory;
   isYesterday: boolean;
+  isWithin24h?: boolean;
   isSummarized: boolean;
   isBookmarked?: boolean;
   summary?: VideoSummary;
@@ -81,7 +82,7 @@ export type ActiveTab = 'dashboard' | 'analytics' | 'settings';
 export interface FilterState {
   category: string; // 'ALL' or specific category
   channelId: string; // 'ALL' or specific channel
-  dateFilter: 'yesterday' | 'today' | 'recent3days' | 'recent7days' | 'all';
+  dateFilter: '24hours' | 'yesterday' | 'today' | 'recent3days' | 'recent7days' | 'all';
   searchQuery: string;
   statusFilter: 'all' | 'summarized' | 'unsummarized' | 'bookmarked';
 }

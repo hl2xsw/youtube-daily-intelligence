@@ -1,5 +1,17 @@
 import { YouTubeChannel, YouTubeVideo, VideoCategory } from '../types';
 
+// Helper to determine if a video was published within the past 24 hours
+export function checkIsWithin24h(pubDateStr: string): boolean {
+  try {
+    const pubDate = new Date(pubDateStr);
+    const now = new Date();
+    const diffHours = (now.getTime() - pubDate.getTime()) / (1000 * 60 * 60);
+    return diffHours <= 24 && diffHours >= -1;
+  } catch {
+    return false;
+  }
+}
+
 // Helper to determine if a video was published "yesterday" (within past 24-48 hours / yesterday in local date)
 export function checkIsYesterday(pubDateStr: string): boolean {
   try {
@@ -9,14 +21,13 @@ export function checkIsYesterday(pubDateStr: string): boolean {
     // Check calendar day difference
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000);
-    const startOfTwoDaysAgo = new Date(startOfToday.getTime() - 48 * 60 * 60 * 1000);
 
     const pubTime = pubDate.getTime();
     if (pubTime >= startOfYesterday.getTime() && pubTime < startOfToday.getTime()) {
       return true;
     }
 
-    // Also consider relative hours (between 12 and 48 hours ago)
+    // Also consider relative hours (between 10 and 48 hours ago)
     const diffHours = (now.getTime() - pubTime) / (1000 * 60 * 60);
     return diffHours >= 10 && diffHours <= 48;
   } catch {
@@ -60,6 +71,7 @@ export function parseYouTubeRssXml(
         : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
       const viewCount = viewsMatch ? parseInt(viewsMatch[1], 10) : undefined;
       const isYesterday = checkIsYesterday(publishedAt);
+      const isWithin24h = checkIsWithin24h(publishedAt);
 
       videos.push({
         id: `yt-${videoId}`,
@@ -74,6 +86,7 @@ export function parseYouTubeRssXml(
         videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
         category: channel.category || '기타',
         isYesterday,
+        isWithin24h,
         isSummarized: false,
         viewCount,
         createdAt: publishedAt
@@ -110,7 +123,8 @@ export async function fetchRealChannelVideos(channel: YouTubeChannel): Promise<Y
           channelTitle: channel.title,
           channelThumbnail: channel.thumbnailUrl || v.channelThumbnail,
           category: channel.category,
-          isYesterday: checkIsYesterday(v.publishedAt)
+          isYesterday: checkIsYesterday(v.publishedAt),
+          isWithin24h: checkIsWithin24h(v.publishedAt)
         }));
       }
     }
@@ -146,6 +160,55 @@ export async function fetchRealChannelVideos(channel: YouTubeChannel): Promise<Y
   }
 
   return [];
+}
+
+// 24H Video Search and Instant AI Summarization
+export async function searchAndSummarize24hVideos(channels: YouTubeChannel[]): Promise<{
+  videos: YouTubeVideo[];
+  within24hCount: number;
+  yesterdayCount: number;
+}> {
+  const activeChannels = channels.filter(c => c.isActive);
+  if (activeChannels.length === 0) {
+    return { videos: [], within24hCount: 0, yesterdayCount: 0 };
+  }
+
+  try {
+    const res = await fetch('/api/youtube/search-24h-videos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        channels: activeChannels,
+        autoSummarize: true
+      })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.videos)) {
+        return {
+          videos: data.videos,
+          within24hCount: data.within24hCount || 0,
+          yesterdayCount: data.yesterdayCount || 0
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('search-24h-videos API call failed:', err);
+  }
+
+  // Fallback: manual sync across channels
+  const allVideos: YouTubeVideo[] = [];
+  for (const ch of activeChannels) {
+    const fetched = await fetchRealChannelVideos(ch);
+    allVideos.push(...fetched);
+  }
+
+  return {
+    videos: allVideos,
+    within24hCount: allVideos.filter(v => v.isWithin24h).length,
+    yesterdayCount: allVideos.filter(v => v.isYesterday).length
+  };
 }
 
 // Real Channel Lookup

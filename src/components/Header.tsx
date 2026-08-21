@@ -16,8 +16,11 @@ interface HeaderProps {
   setActiveTab: (tab: ActiveTab) => void;
   onSyncChannels: () => void;
   isSyncing: boolean;
+  onSearch24hVideos?: () => void;
+  isSearching24h?: boolean;
   onOpenExportModal: () => void;
   totalYesterdayCount: number;
+  total24hCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -25,8 +28,11 @@ export const Header: React.FC<HeaderProps> = ({
   setActiveTab,
   onSyncChannels,
   isSyncing,
+  onSearch24hVideos,
+  isSearching24h = false,
   onOpenExportModal,
-  totalYesterdayCount
+  totalYesterdayCount,
+  total24hCount = 0
 }) => {
   // Yesterday's formatted date
   const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -36,6 +42,8 @@ export const Header: React.FC<HeaderProps> = ({
     day: 'numeric',
     weekday: 'short'
   });
+
+  const displayCount = total24hCount > 0 ? total24hCount : totalYesterdayCount;
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80">
@@ -51,13 +59,13 @@ export const Header: React.FC<HeaderProps> = ({
                 <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
                   YouTube Daily Brief
                 </h1>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                  <Sparkles className="w-3 h-3 text-slate-600" />
-                  AI Summary
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200/80">
+                  <Sparkles className="w-3 h-3 text-amber-600" />
+                  Gemini 2.5 Flash
                 </span>
               </div>
               <p className="text-xs text-slate-500 hidden sm:block">
-                설정 채널의 전일 업로드 영상 AI 요약 및 인텔리전스 분석
+                설정 채널의 24시간/전일 업로드 영상 AI 핵심 요약 및 인텔리전스 분석
               </p>
             </div>
           </div>
@@ -75,9 +83,9 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <LayoutDashboard className="w-3.5 h-3.5" />
               대시보드
-              {totalYesterdayCount > 0 && (
+              {displayCount > 0 && (
                 <span className="ml-1 px-1.5 py-0.2 bg-slate-900 text-white rounded text-[10px] font-bold">
-                  {totalYesterdayCount}
+                  {displayCount}
                 </span>
               )}
             </button>
@@ -111,17 +119,25 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Right Action Tools */}
           <div className="flex items-center gap-2">
-            {/* Yesterday Date Indicator */}
-            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-50 border border-slate-200/80 rounded-lg text-xs font-medium text-slate-600">
-              <Calendar className="w-3.5 h-3.5 text-slate-400" />
-              <span>전일 ({formattedYesterday})</span>
-            </div>
+            {/* 24h Instant Scan Button */}
+            {onSearch24hVideos && (
+              <button
+                id="header-24h-scan-btn"
+                onClick={onSearch24hVideos}
+                disabled={isSearching24h || isSyncing}
+                title="등록된 채널의 최근 24시간 업로드 영상을 검색하고 AI로 즉시 요약합니다"
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-900 bg-amber-100/80 hover:bg-amber-200/80 active:bg-amber-300 border border-amber-300/80 rounded-lg shadow-2xs transition-colors disabled:opacity-50"
+              >
+                <Sparkles className={`w-3.5 h-3.5 text-amber-700 ${isSearching24h ? 'animate-spin' : ''}`} />
+                <span>{isSearching24h ? '24H 요약 중...' : '24H AI 요약'}</span>
+              </button>
+            )}
 
             {/* Sync Button */}
             <button
               id="header-sync-btn"
               onClick={onSyncChannels}
-              disabled={isSyncing}
+              disabled={isSyncing || isSearching24h}
               title="설정된 유튜브 채널의 최신 영상을 다시 확인합니다"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 active:bg-slate-100 border border-slate-200 rounded-lg shadow-2xs transition-colors disabled:opacity-50"
             >
@@ -136,7 +152,7 @@ export const Header: React.FC<HeaderProps> = ({
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 active:bg-slate-950 rounded-lg shadow-2xs transition-colors"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>내보내기</span>
+              <span className="hidden sm:inline">내보내기</span>
             </button>
           </div>
         </div>
@@ -149,7 +165,7 @@ export const Header: React.FC<HeaderProps> = ({
               activeTab === 'dashboard' ? 'bg-slate-900 text-white' : 'text-slate-600 bg-slate-100'
             }`}
           >
-            대시보드 ({totalYesterdayCount})
+            대시보드 ({displayCount})
           </button>
           <button
             onClick={() => setActiveTab('analytics')}

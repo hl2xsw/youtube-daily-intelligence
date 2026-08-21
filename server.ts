@@ -178,7 +178,7 @@ app.post('/api/youtube/lookup-channel', async (req, res) => {
   }
 });
 
-// 3. Fetch channel videos via YouTube RSS feed
+// 3. Fetch channel videos via YouTube RSS feed & channel metadata
 app.post('/api/youtube/fetch-rss', async (req, res) => {
   try {
     const { channelId, channelTitle } = req.body;
@@ -224,8 +224,11 @@ app.post('/api/youtube/fetch-rss', async (req, res) => {
           const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000);
           
           const pubTime = pubDate.getTime();
+          const diffHours = (now.getTime() - pubTime) / (1000 * 60 * 60);
+
+          const isWithin24h = diffHours <= 24 && diffHours >= -1;
           const isYesterday = (pubTime >= startOfYesterday.getTime() && pubTime < startOfToday.getTime()) ||
-                              ((now.getTime() - pubTime) / (1000 * 60 * 60) >= 10 && (now.getTime() - pubTime) / (1000 * 60 * 60) <= 48);
+                              (diffHours >= 10 && diffHours <= 48);
 
           videos.push({
             id: `yt-${videoId}`,
@@ -239,6 +242,7 @@ app.post('/api/youtube/fetch-rss', async (req, res) => {
             videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
             viewCount: viewsMatch ? parseInt(viewsMatch[1], 10) : undefined,
             isYesterday,
+            isWithin24h,
             isSummarized: false
           });
         }
@@ -249,6 +253,216 @@ app.post('/api/youtube/fetch-rss', async (req, res) => {
   } catch (error: any) {
     console.error('Fetch RSS error:', error);
     res.status(500).json({ error: error.message || '영상 목록을 불러오지 못했습니다.' });
+  }
+});
+
+// Helper function to summarize video using Gemini AI
+async function summarizeVideoWithGemini(
+  videoTitle: string,
+  videoDescription: string,
+  channelTitle: string,
+  category: string,
+  detailLevel: string = 'standard'
+) {
+  const ai = getAI();
+  if (!ai) {
+    return generateFallbackSummary(videoTitle, videoDescription, channelTitle, category);
+  }
+
+  const prompt = `
+당신은 최고의 유튜브 콘텐츠 전문 분석가 및 지식 큐레이터입니다.
+아래 유튜브 영상의 제목, 설명, 채널 정보를 바탕으로 시청자가 영상을 직접 보지 않고도 모든 핵심 인사이트를 파악할 수 있도록 깊이 있고 체계적인 한국어 요약 보고서를 작성해주세요.
+
+[영상 정보]
+- 채널명: ${channelTitle || '미지정'}
+- 영상 제목: ${videoTitle}
+- 기본 카테고리: ${category || 'IT/테크'}
+- 영상 설명: ${videoDescription || '설명 없음'}
+- 요약 상세도: ${detailLevel} (concise: 간결핵심, standard: 표준상세, in-depth: 심층분석)
+
+[작성 요구사항]
+1. coreTopic: 영상 전체를 관통하는 명확하고 임팩트 있는 핵심 주제 1문장
+2. keyPoints: 영상의 가장 중요한 핵심 논점 및 사실 3~5개를 불릿포인트 문자열 배열로 작성
+3. detailedSummary: 논리적인 기승전결(배경, 핵심 내용, 결론)을 갖춘 3~5개 문장의 상세하고 풍부한 줄거리 요약
+4. timelineSummary: 영상의 흐름을 3~4개 구간(예: 00:00, 05:30 등)으로 나누어 각 구간별 소제목(title)과 핵심 요점(point) 정리
+5. takeaways: 시청자가 얻을 수 있는 실질적인 시사점, 인사이트 또는 액션 플랜 2~3개
+6. keywords: 핵심 검색 키워드 4~6개 (예: ["AI에이전트", "전력인프라", "테크트렌드"])
+7. sentiment: 'positive' | 'neutral' | 'caution' | 'insightful' 중 택1
+8. sentimentLabel: 성향 설명 라벨 (예: "미래 성장 전망 (긍정적)", "시장 변동성 주의", "심층 기술 분석")
+9. category: 적합한 카테고리 분류 ('IT/테크', '경제/재테크', '비즈니스/스타트업', '과학/지식', '뉴스/시사', '자기계발/교육', '라이프/엔터', '기타' 중 택1)
+10. readingTimeMinutes: 요약본을 읽는데 걸리는 예상 시간(분 단위 정수, 2~4)
+`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.7-flash',
+      contents: prompt,
+      config: {
+        systemInstruction: '당신은 대한민국 최고의 유튜브 데이터 분석가입니다. 전문적이고 유익하며 한국어 맞춤법이 완벽한 JSON 포맷으로만 답변하세요.',
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            coreTopic: { type: Type.STRING, description: '영상의 핵심 주제 1문장' },
+            keyPoints: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: '주요 포인트 3~5개'
+            },
+            detailedSummary: { type: Type.STRING, description: '상세 종합 요약' },
+            timelineSummary: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  timestamp: { type: Type.STRING },
+                  title: { type: Type.STRING },
+                  point: { type: Type.STRING }
+                },
+                required: ['timestamp', 'title', 'point']
+              },
+              description: '타임라인별 핵심 내용'
+            },
+            takeaways: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: '시사점 및 액션 플랜'
+            },
+            keywords: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: '핵심 키워드 4~6개'
+            },
+            sentiment: { type: Type.STRING, description: 'positive, neutral, caution, insightful' },
+            sentimentLabel: { type: Type.STRING, description: '성향 라벨' },
+            category: { type: Type.STRING, description: '추천 카테고리' },
+            readingTimeMinutes: { type: Type.INTEGER, description: '예상 읽기 시간' }
+          },
+          required: ['coreTopic', 'keyPoints', 'detailedSummary', 'takeaways', 'keywords', 'sentiment', 'sentimentLabel', 'category', 'readingTimeMinutes']
+        }
+      }
+    });
+
+    const text = response.text;
+    if (text) {
+      return JSON.parse(text);
+    }
+  } catch (err) {
+    console.warn('Gemini summary error:', err);
+  }
+
+  return generateFallbackSummary(videoTitle, videoDescription, channelTitle, category);
+}
+
+// 3.5 Dedicated 24h Video Search & Instant AI Summarization
+app.post('/api/youtube/search-24h-videos', async (req, res) => {
+  try {
+    const { channels, autoSummarize = true } = req.body;
+    if (!Array.isArray(channels) || channels.length === 0) {
+      return res.status(400).json({ error: 'channels array is required' });
+    }
+
+    const activeChannels = channels.filter((c: any) => c.isActive !== false);
+    const collectedVideos: any[] = [];
+    const now = new Date();
+
+    for (const ch of activeChannels) {
+      if (!ch.channelId || !ch.channelId.startsWith('UC')) continue;
+
+      const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(ch.channelId)}`;
+      try {
+        const response = await fetch(rssUrl, {
+          headers: { 
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          }
+        });
+
+        if (response.ok) {
+          const feedXml = await response.text();
+          if (feedXml.includes('<entry>')) {
+            const entries = feedXml.split('<entry>').slice(1);
+            for (const entry of entries) {
+              const videoIdMatch = entry.match(/<yt:videoId>([^<]+)<\/yt:videoId>/);
+              const titleMatch = entry.match(/<title>([^<]+)<\/title>/);
+              const publishedMatch = entry.match(/<published>([^<]+)<\/published>/);
+              const descMatch = entry.match(/<media:description>([^<]*)<\/media:description>/s);
+              const thumbMatch = entry.match(/<media:thumbnail url="([^"]+)"/);
+              const viewsMatch = entry.match(/<media:statistics views="(\d+)"/);
+
+              if (videoIdMatch && titleMatch && publishedMatch) {
+                const videoId = videoIdMatch[1].trim();
+                const pubDate = new Date(publishedMatch[1]);
+                const pubTime = pubDate.getTime();
+                const diffHours = (now.getTime() - pubTime) / (1000 * 60 * 60);
+
+                const isWithin24h = diffHours <= 24 && diffHours >= -1;
+                const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000);
+                const isYesterday = (pubTime >= startOfYesterday.getTime() && pubTime < startOfToday.getTime()) ||
+                                    (diffHours >= 10 && diffHours <= 48);
+
+                collectedVideos.push({
+                  id: `yt-${videoId}`,
+                  videoId,
+                  channelId: ch.channelId,
+                  channelTitle: ch.title,
+                  channelThumbnail: ch.thumbnailUrl,
+                  title: titleMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+                  description: descMatch ? descMatch[1].trim() : '',
+                  thumbnailUrl: thumbMatch ? thumbMatch[1] : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+                  publishedAt: pubDate.toISOString(),
+                  videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
+                  category: ch.category || '기타',
+                  viewCount: viewsMatch ? parseInt(viewsMatch[1], 10) : undefined,
+                  isYesterday,
+                  isWithin24h,
+                  isSummarized: false,
+                  createdAt: pubDate.toISOString()
+                });
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(`RSS search failed for ${ch.title}:`, e);
+      }
+    }
+
+    // Sort by publication date descending
+    collectedVideos.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+
+    // Auto-summarize 24h & yesterday videos with Gemini AI
+    if (autoSummarize && collectedVideos.length > 0) {
+      const toSummarize = collectedVideos.slice(0, 8); // Top recent videos
+      for (const vid of toSummarize) {
+        try {
+          const summary = await summarizeVideoWithGemini(
+            vid.title,
+            vid.description,
+            vid.channelTitle,
+            vid.category,
+            'standard'
+          );
+          if (summary) {
+            vid.summary = summary;
+            vid.isSummarized = true;
+          }
+        } catch (sumErr) {
+          console.warn(`Auto-summary failed for ${vid.title}:`, sumErr);
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      videos: collectedVideos,
+      count: collectedVideos.length,
+      within24hCount: collectedVideos.filter(v => v.isWithin24h).length,
+      yesterdayCount: collectedVideos.filter(v => v.isYesterday).length
+    });
+  } catch (error: any) {
+    console.error('Search 24h error:', error);
+    res.status(500).json({ error: error.message || '24시간 영상 검색에 실패했습니다.' });
   }
 });
 
