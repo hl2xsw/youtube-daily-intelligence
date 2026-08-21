@@ -1,6 +1,5 @@
 import { YouTubeChannel, YouTubeVideo, DailyReport, AppSettings } from '../types';
 import { DEFAULT_CHANNELS } from '../data/defaultChannels';
-import { INITIAL_VIDEOS } from '../data/mockVideos';
 
 const CHANNELS_KEY = 'yt_summary_channels_v1';
 const VIDEOS_KEY = 'yt_summary_videos_v1';
@@ -50,6 +49,11 @@ export function saveChannels(channels: YouTubeChannel[]): void {
   }
 }
 
+export function isRealYouTubeVideoId(id: string): boolean {
+  // Real YouTube video IDs are 11 characters alphanumeric and _ -
+  return /^[a-zA-Z0-9_-]{11}$/.test(id);
+}
+
 export function loadVideos(): YouTubeVideo[] {
   try {
     const raw = localStorage.getItem(VIDEOS_KEY);
@@ -58,7 +62,20 @@ export function loadVideos(): YouTubeVideo[] {
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      return parsed;
+      // Strictly purge any legacy mock/fake videos
+      const realOnly = parsed.filter(v => 
+        v && 
+        typeof v.videoId === 'string' && 
+        isRealYouTubeVideoId(v.videoId) &&
+        !v.id?.startsWith('vid-') &&
+        !v.videoId.includes('shuka_') &&
+        !v.videoId.includes('jocoding_') &&
+        !v.videoId.includes('mock')
+      );
+      if (realOnly.length !== parsed.length) {
+        saveVideos(realOnly);
+      }
+      return realOnly;
     }
     return [];
   } catch (e) {
@@ -149,7 +166,7 @@ export function resetAllData(): void {
   localStorage.removeItem(SETTINGS_KEY);
   localStorage.removeItem(CATEGORIES_KEY);
   saveChannels(DEFAULT_CHANNELS);
-  saveVideos(INITIAL_VIDEOS);
+  saveVideos([]);
   saveSettings(DEFAULT_SETTINGS);
   saveCategories(DEFAULT_CATEGORIES);
 }
