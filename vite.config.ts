@@ -5,6 +5,7 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
+    base: './', // 상대 경로로 설정하여 어디서든 정상 로드되도록 처리
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
