@@ -265,12 +265,13 @@ function AppContent() {
           category: (data.summary.category as VideoCategory) || video.category
         };
 
-        const newVideos = videos.map(v => v.id === video.id ? updatedVideo : v);
+        const exists = videos.some(v => v.id === video.id);
+        const newVideos = exists
+          ? videos.map(v => v.id === video.id ? updatedVideo : v)
+          : [updatedVideo, ...videos];
         updateVideos(newVideos);
 
-        if (selectedVideo?.id === video.id) {
-          setSelectedVideo(updatedVideo);
-        }
+        setSelectedVideo(updatedVideo);
 
         showToast('AI 핵심 주제 및 요약 생성이 완료되었습니다!', 'success');
       } else {

@@ -71,6 +71,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   });
 
   // Calculate quick metrics
+  const todayVideos = useMemo(() => {
+    return videos.filter(v => v.isToday || (Date.now() - new Date(v.publishedAt).getTime()) <= 16 * 60 * 60 * 1000);
+  }, [videos]);
+
   const within24hVideos = useMemo(() => {
     const now = Date.now();
     return videos.filter(v => v.isWithin24h || (now - new Date(v.publishedAt).getTime()) <= 24 * 60 * 60 * 1000);
@@ -98,16 +102,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       const pubTime = new Date(video.publishedAt).getTime();
       const diffHours = (now - pubTime) / (1000 * 60 * 60);
 
-      if (filters.dateFilter === '24hours') {
+      if (filters.dateFilter === 'today') {
+        if (!video.isToday && diffHours > 16) return false;
+      } else if (filters.dateFilter === '24hours') {
         if (!video.isWithin24h && diffHours > 24) return false;
       } else if (filters.dateFilter === 'yesterday') {
         if (!video.isYesterday) return false;
       } else if (filters.dateFilter === 'recent3days') {
-        const threeDaysAgo = now - 3 * 24 * 60 * 60 * 1000;
-        if (pubTime < threeDaysAgo) return false;
+        if (diffHours > 72) return false;
       } else if (filters.dateFilter === 'recent7days') {
-        const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
-        if (pubTime < sevenDaysAgo) return false;
+        if (diffHours > 168) return false;
       }
 
       // Status filter
@@ -323,9 +327,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 bg-slate-50 text-slate-900 cursor-pointer hover:border-slate-300 focus:outline-none"
           >
             <option value="24hours">⚡ 최근 24시간 ({within24hVideos.length}개)</option>
+            <option value="today">🔥 오늘(당일) 업로드 ({todayVideos.length}개)</option>
             <option value="yesterday">📅 전일(어제) 영상 ({yesterdayVideos.length}개)</option>
-            <option value="recent3days">최근 3일</option>
-            <option value="recent7days">최근 7일</option>
+            <option value="recent3days">최근 3일 이내</option>
+            <option value="recent7days">최근 7일 이내</option>
             <option value="all">전체 수집 영상 ({videos.length}개)</option>
           </select>
 

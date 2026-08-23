@@ -43,6 +43,8 @@ export interface YouTubeVideo {
   category: VideoCategory;
   isYesterday: boolean;
   isWithin24h?: boolean;
+  isToday?: boolean;
+  relativeTimeText?: string;
   isSummarized: boolean;
   isBookmarked?: boolean;
   summary?: VideoSummary;

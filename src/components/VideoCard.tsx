@@ -134,13 +134,23 @@ export const VideoCard: React.FC<VideoCardProps> = ({
           </div>
         </div>
 
-        {/* Badges: Yesterday & Category */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          {video.isYesterday && (
+        {/* Badges: Relative Time, Yesterday, Category */}
+        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+          {video.relativeTimeText ? (
+            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+              video.isWithin24h 
+                ? 'bg-amber-100 text-amber-900 border border-amber-300' 
+                : video.isYesterday 
+                ? 'bg-slate-900 text-white' 
+                : 'bg-slate-100 text-slate-700 border border-slate-200'
+            }`}>
+              {video.relativeTimeText}
+            </span>
+          ) : video.isYesterday ? (
             <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-900 text-white">
               전일 영상
             </span>
-          )}
+          ) : null}
           <span className={`px-2 py-0.5 rounded text-[10px] font-medium border ${catStyle.bg} ${catStyle.text} ${catStyle.border}`}>
             {video.category}
           </span>
@@ -205,9 +215,22 @@ export const VideoCard: React.FC<VideoCardProps> = ({
                 </p>
               </div>
             ) : (
-              <p className="mt-2 text-xs text-slate-500 line-clamp-2">
-                {video.description || '영상 요약 대기 중입니다.'}
-              </p>
+              <div className="mt-2 p-2 rounded-lg bg-slate-50 border border-dashed border-slate-300 flex items-center justify-between gap-2">
+                <p className="text-xs text-slate-500 line-clamp-1 truncate">
+                  {video.description || 'AI 요약 대기 중'}
+                </p>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReanalyze(video);
+                  }}
+                  disabled={isAnalyzing}
+                  className="px-2 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded text-[11px] font-semibold flex items-center gap-1 shrink-0 transition-colors disabled:opacity-50"
+                >
+                  <Sparkles className={`w-3 h-3 text-amber-400 ${isAnalyzing ? 'animate-spin' : ''}`} />
+                  <span>{isAnalyzing ? '분석중...' : 'AI 요약'}</span>
+                </button>
+              </div>
             )}
           </div>
         </div>

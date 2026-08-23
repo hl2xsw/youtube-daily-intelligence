@@ -178,6 +178,69 @@ app.post('/api/youtube/lookup-channel', async (req, res) => {
   }
 });
 
+// Helper to calculate exact elapsed time and relative date categorization (KST UTC+9 aware)
+function calculateVideoTimeStatus(pubDateIso: string, nowEpoch: number = Date.now()): {
+  diffHours: number;
+  diffMinutes: number;
+  isWithin24h: boolean;
+  isToday: boolean;
+  isYesterday: boolean;
+  isRecent3Days: boolean;
+  relativeTimeText: string;
+} {
+  const pubTime = new Date(pubDateIso).getTime();
+  const diffMs = nowEpoch - pubTime;
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
+  const diffHours = diffMs / (1000 * 60 * 60);
+
+  let relativeTimeText = '';
+  if (diffMinutes < 1) {
+    relativeTimeText = '방금 전';
+  } else if (diffMinutes < 60) {
+    relativeTimeText = `${Math.max(1, diffMinutes)}분 전`;
+  } else if (diffHours < 24) {
+    relativeTimeText = `${Math.floor(diffHours)}시간 전`;
+  } else if (diffHours < 48) {
+    relativeTimeText = '1일 전 (어제)';
+  } else {
+    const days = Math.floor(diffHours / 24);
+    relativeTimeText = `${days}일 전`;
+  }
+
+  // Strict 24-hour window (including 1 hour ago, 5 mins ago, etc.)
+  const isWithin24h = diffHours >= -0.5 && diffHours <= 24.0;
+
+  // Calendar dates in KST (UTC+9)
+  const kstOffsetMs = 9 * 60 * 60 * 1000;
+  const nowKst = new Date(nowEpoch + kstOffsetMs);
+  const pubKst = new Date(pubTime + kstOffsetMs);
+
+  const isSameDayKst = 
+    nowKst.getUTCFullYear() === pubKst.getUTCFullYear() &&
+    nowKst.getUTCMonth() === pubKst.getUTCMonth() &&
+    nowKst.getUTCDate() === pubKst.getUTCDate();
+
+  const yesterdayKst = new Date(nowEpoch - 24 * 60 * 60 * 1000 + kstOffsetMs);
+  const isYesterdayDayKst =
+    yesterdayKst.getUTCFullYear() === pubKst.getUTCFullYear() &&
+    yesterdayKst.getUTCMonth() === pubKst.getUTCMonth() &&
+    yesterdayKst.getUTCDate() === pubKst.getUTCDate();
+
+  const isToday = isSameDayKst || (diffHours >= -0.5 && diffHours < 16);
+  const isYesterday = !isToday && (isYesterdayDayKst || (diffHours >= 16 && diffHours <= 48.0));
+  const isRecent3Days = diffHours <= 72.0;
+
+  return {
+    diffHours,
+    diffMinutes,
+    isWithin24h,
+    isToday,
+    isYesterday,
+    isRecent3Days,
+    relativeTimeText
+  };
+}
+
 // 3. Fetch channel videos via YouTube RSS feed & channel metadata
 app.post('/api/youtube/fetch-rss', async (req, res) => {
   try {
@@ -218,17 +281,8 @@ app.post('/api/youtube/fetch-rss', async (req, res) => {
 
         if (videoIdMatch && titleMatch && publishedMatch) {
           const videoId = videoIdMatch[1].trim();
-          const pubDate = new Date(publishedMatch[1]);
-          const now = new Date();
-          const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000);
-          
-          const pubTime = pubDate.getTime();
-          const diffHours = (now.getTime() - pubTime) / (1000 * 60 * 60);
-
-          const isWithin24h = diffHours <= 24 && diffHours >= -1;
-          const isYesterday = (pubTime >= startOfYesterday.getTime() && pubTime < startOfToday.getTime()) ||
-                              (diffHours >= 10 && diffHours <= 48);
+          const pubDateIso = new Date(publishedMatch[1]).toISOString();
+          const timeStatus = calculateVideoTimeStatus(pubDateIso);
 
           videos.push({
             id: `yt-${videoId}`,
@@ -238,11 +292,13 @@ app.post('/api/youtube/fetch-rss', async (req, res) => {
             title: titleMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
             description: descMatch ? descMatch[1].trim() : '',
             thumbnailUrl: thumbMatch ? thumbMatch[1] : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-            publishedAt: pubDate.toISOString(),
+            publishedAt: pubDateIso,
             videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
             viewCount: viewsMatch ? parseInt(viewsMatch[1], 10) : undefined,
-            isYesterday,
-            isWithin24h,
+            isYesterday: timeStatus.isYesterday,
+            isWithin24h: timeStatus.isWithin24h,
+            isToday: timeStatus.isToday,
+            relativeTimeText: timeStatus.relativeTimeText,
             isSummarized: false
           });
         }
@@ -364,7 +420,7 @@ app.post('/api/youtube/search-24h-videos', async (req, res) => {
 
     const activeChannels = channels.filter((c: any) => c.isActive !== false);
     const collectedVideos: any[] = [];
-    const now = new Date();
+    const nowEpoch = Date.now();
 
     for (const ch of activeChannels) {
       if (!ch.channelId || !ch.channelId.startsWith('UC')) continue;
@@ -373,7 +429,8 @@ app.post('/api/youtube/search-24h-videos', async (req, res) => {
       try {
         const response = await fetch(rssUrl, {
           headers: { 
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Cache-Control': 'no-cache, no-store'
           }
         });
 
@@ -391,15 +448,8 @@ app.post('/api/youtube/search-24h-videos', async (req, res) => {
 
               if (videoIdMatch && titleMatch && publishedMatch) {
                 const videoId = videoIdMatch[1].trim();
-                const pubDate = new Date(publishedMatch[1]);
-                const pubTime = pubDate.getTime();
-                const diffHours = (now.getTime() - pubTime) / (1000 * 60 * 60);
-
-                const isWithin24h = diffHours <= 24 && diffHours >= -1;
-                const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000);
-                const isYesterday = (pubTime >= startOfYesterday.getTime() && pubTime < startOfToday.getTime()) ||
-                                    (diffHours >= 10 && diffHours <= 48);
+                const pubDateIso = new Date(publishedMatch[1]).toISOString();
+                const timeStatus = calculateVideoTimeStatus(pubDateIso, nowEpoch);
 
                 collectedVideos.push({
                   id: `yt-${videoId}`,
@@ -410,14 +460,16 @@ app.post('/api/youtube/search-24h-videos', async (req, res) => {
                   title: titleMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
                   description: descMatch ? descMatch[1].trim() : '',
                   thumbnailUrl: thumbMatch ? thumbMatch[1] : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-                  publishedAt: pubDate.toISOString(),
+                  publishedAt: pubDateIso,
                   videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
                   category: ch.category || '기타',
                   viewCount: viewsMatch ? parseInt(viewsMatch[1], 10) : undefined,
-                  isYesterday,
-                  isWithin24h,
+                  isYesterday: timeStatus.isYesterday,
+                  isWithin24h: timeStatus.isWithin24h,
+                  isToday: timeStatus.isToday,
+                  relativeTimeText: timeStatus.relativeTimeText,
                   isSummarized: false,
-                  createdAt: pubDate.toISOString()
+                  createdAt: pubDateIso
                 });
               }
             }
@@ -428,12 +480,12 @@ app.post('/api/youtube/search-24h-videos', async (req, res) => {
       }
     }
 
-    // Sort by publication date descending
+    // Sort by publication date descending (newest first)
     collectedVideos.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
 
-    // Auto-summarize 24h & yesterday videos with Gemini AI
+    // Auto-summarize recent videos with Gemini AI
     if (autoSummarize && collectedVideos.length > 0) {
-      const toSummarize = collectedVideos.slice(0, 8); // Top recent videos
+      const toSummarize = collectedVideos.slice(0, 12);
       for (const vid of toSummarize) {
         try {
           const summary = await summarizeVideoWithGemini(
@@ -449,6 +501,8 @@ app.post('/api/youtube/search-24h-videos', async (req, res) => {
           }
         } catch (sumErr) {
           console.warn(`Auto-summary failed for ${vid.title}:`, sumErr);
+          vid.summary = generateFallbackSummary(vid.title, vid.description, vid.channelTitle, vid.category);
+          vid.isSummarized = true;
         }
       }
     }
@@ -458,6 +512,7 @@ app.post('/api/youtube/search-24h-videos', async (req, res) => {
       videos: collectedVideos,
       count: collectedVideos.length,
       within24hCount: collectedVideos.filter(v => v.isWithin24h).length,
+      todayCount: collectedVideos.filter(v => v.isToday).length,
       yesterdayCount: collectedVideos.filter(v => v.isYesterday).length
     });
   } catch (error: any) {

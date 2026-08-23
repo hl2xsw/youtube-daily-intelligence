@@ -1,38 +1,84 @@
 import { YouTubeChannel, YouTubeVideo, VideoCategory } from '../types';
 
-// Helper to determine if a video was published within the past 24 hours
-export function checkIsWithin24h(pubDateStr: string): boolean {
-  try {
-    const pubDate = new Date(pubDateStr);
-    const now = new Date();
-    const diffHours = (now.getTime() - pubDate.getTime()) / (1000 * 60 * 60);
-    return diffHours <= 24 && diffHours >= -1;
-  } catch {
-    return false;
+// Calculate exact elapsed time and relative date categorization
+export function calculateVideoTimeStatus(pubDateIso: string, nowEpoch: number = Date.now()): {
+  diffHours: number;
+  diffMinutes: number;
+  isWithin24h: boolean;
+  isToday: boolean;
+  isYesterday: boolean;
+  isRecent3Days: boolean;
+  relativeTimeText: string;
+} {
+  const pubTime = new Date(pubDateIso).getTime();
+  const diffMs = nowEpoch - pubTime;
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
+  const diffHours = diffMs / (1000 * 60 * 60);
+
+  // Time text in Korean: e.g. "8분 전", "1시간 전", "18시간 전", "1일 전", "3일 전"
+  let relativeTimeText = '';
+  if (diffMinutes < 1) {
+    relativeTimeText = '방금 전';
+  } else if (diffMinutes < 60) {
+    relativeTimeText = `${Math.max(1, diffMinutes)}분 전`;
+  } else if (diffHours < 24) {
+    relativeTimeText = `${Math.floor(diffHours)}시간 전`;
+  } else if (diffHours < 48) {
+    relativeTimeText = '1일 전 (어제)';
+  } else {
+    const days = Math.floor(diffHours / 24);
+    relativeTimeText = `${days}일 전`;
   }
+
+  // Strict 24-hour window (allowing slight future tolerance for clock skew)
+  const isWithin24h = diffHours >= -0.5 && diffHours <= 24.0;
+
+  // Calendar dates in KST (UTC+9)
+  const kstOffsetMs = 9 * 60 * 60 * 1000;
+  const nowKst = new Date(nowEpoch + kstOffsetMs);
+  const pubKst = new Date(pubTime + kstOffsetMs);
+
+  const isSameDayKst = 
+    nowKst.getUTCFullYear() === pubKst.getUTCFullYear() &&
+    nowKst.getUTCMonth() === pubKst.getUTCMonth() &&
+    nowKst.getUTCDate() === pubKst.getUTCDate();
+
+  // Yesterday in KST: exactly 1 calendar day before today
+  const yesterdayKst = new Date(nowEpoch - 24 * 60 * 60 * 1000 + kstOffsetMs);
+  const isYesterdayDayKst =
+    yesterdayKst.getUTCFullYear() === pubKst.getUTCFullYear() &&
+    yesterdayKst.getUTCMonth() === pubKst.getUTCMonth() &&
+    yesterdayKst.getUTCDate() === pubKst.getUTCDate();
+
+  const isToday = isSameDayKst || (diffHours >= -0.5 && diffHours < 16);
+  // Strict Yesterday: must NOT be today, and must be between 16h~48h or 1 calendar day prior
+  const isYesterday = !isToday && (isYesterdayDayKst || (diffHours >= 16 && diffHours <= 48.0));
+  const isRecent3Days = diffHours <= 72.0;
+
+  return {
+    diffHours,
+    diffMinutes,
+    isWithin24h,
+    isToday,
+    isYesterday,
+    isRecent3Days,
+    relativeTimeText
+  };
 }
 
-// Helper to determine if a video was published "yesterday" (within past 24-48 hours / yesterday in local date)
+// Helper to determine if a video was published within the past 24 hours
+export function checkIsWithin24h(pubDateStr: string): boolean {
+  return calculateVideoTimeStatus(pubDateStr).isWithin24h;
+}
+
+// Helper to determine if a video was published "yesterday"
 export function checkIsYesterday(pubDateStr: string): boolean {
-  try {
-    const pubDate = new Date(pubDateStr);
-    const now = new Date();
-    
-    // Check calendar day difference
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000);
+  return calculateVideoTimeStatus(pubDateStr).isYesterday;
+}
 
-    const pubTime = pubDate.getTime();
-    if (pubTime >= startOfYesterday.getTime() && pubTime < startOfToday.getTime()) {
-      return true;
-    }
-
-    // Also consider relative hours (between 10 and 48 hours ago)
-    const diffHours = (now.getTime() - pubTime) / (1000 * 60 * 60);
-    return diffHours >= 10 && diffHours <= 48;
-  } catch {
-    return false;
-  }
+// Helper to determine if a video was published "today"
+export function checkIsToday(pubDateStr: string): boolean {
+  return calculateVideoTimeStatus(pubDateStr).isToday;
 }
 
 // Parse YouTube RSS XML string into YouTubeVideo objects
@@ -70,8 +116,7 @@ export function parseYouTubeRssXml(
         ? thumbMatch[1] 
         : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
       const viewCount = viewsMatch ? parseInt(viewsMatch[1], 10) : undefined;
-      const isYesterday = checkIsYesterday(publishedAt);
-      const isWithin24h = checkIsWithin24h(publishedAt);
+      const timeStatus = calculateVideoTimeStatus(publishedAt);
 
       videos.push({
         id: `yt-${videoId}`,
@@ -85,8 +130,10 @@ export function parseYouTubeRssXml(
         publishedAt,
         videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
         category: channel.category || '기타',
-        isYesterday,
-        isWithin24h,
+        isYesterday: timeStatus.isYesterday,
+        isWithin24h: timeStatus.isWithin24h,
+        isToday: timeStatus.isToday,
+        relativeTimeText: timeStatus.relativeTimeText,
         isSummarized: false,
         viewCount,
         createdAt: publishedAt
@@ -118,14 +165,19 @@ export async function fetchRealChannelVideos(channel: YouTubeChannel): Promise<Y
     if (res.ok) {
       const data = await res.json();
       if (data.success && Array.isArray(data.videos) && data.videos.length > 0) {
-        return data.videos.map((v: any) => ({
-          ...v,
-          channelTitle: channel.title,
-          channelThumbnail: channel.thumbnailUrl || v.channelThumbnail,
-          category: channel.category,
-          isYesterday: checkIsYesterday(v.publishedAt),
-          isWithin24h: checkIsWithin24h(v.publishedAt)
-        }));
+        return data.videos.map((v: any) => {
+          const timeStatus = calculateVideoTimeStatus(v.publishedAt);
+          return {
+            ...v,
+            channelTitle: channel.title,
+            channelThumbnail: channel.thumbnailUrl || v.channelThumbnail,
+            category: channel.category,
+            isYesterday: timeStatus.isYesterday,
+            isWithin24h: timeStatus.isWithin24h,
+            isToday: timeStatus.isToday,
+            relativeTimeText: timeStatus.relativeTimeText
+          };
+        });
       }
     }
   } catch {
