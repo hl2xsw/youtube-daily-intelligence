@@ -312,20 +312,18 @@ app.post('/api/youtube/fetch-rss', async (req, res) => {
   }
 });
 
-// Helper function to summarize video using Gemini AI
+// Helper function to summarize video using Gemini AI with multi-model fallback
 async function summarizeVideoWithGemini(
   videoTitle: string,
   videoDescription: string,
   channelTitle: string,
   category: string,
   detailLevel: string = 'standard'
-) {
+): Promise<{ summary: any; aiPowered: boolean }> {
   const ai = getAI();
-  if (!ai) {
-    return generateFallbackSummary(videoTitle, videoDescription, channelTitle, category);
-  }
 
-  const prompt = `
+  if (ai) {
+    const prompt = `
 당신은 최고의 유튜브 콘텐츠 전문 분석가 및 지식 큐레이터입니다.
 아래 유튜브 영상의 제목, 설명, 채널 정보를 바탕으로 시청자가 영상을 직접 보지 않고도 모든 핵심 인사이트를 파악할 수 있도록 깊이 있고 체계적인 한국어 요약 보고서를 작성해주세요.
 
@@ -349,65 +347,83 @@ async function summarizeVideoWithGemini(
 10. readingTimeMinutes: 요약본을 읽는데 걸리는 예상 시간(분 단위 정수, 2~4)
 `;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.7-flash',
-      contents: prompt,
-      config: {
-        systemInstruction: '당신은 대한민국 최고의 유튜브 데이터 분석가입니다. 전문적이고 유익하며 한국어 맞춤법이 완벽한 JSON 포맷으로만 답변하세요.',
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            coreTopic: { type: Type.STRING, description: '영상의 핵심 주제 1문장' },
-            keyPoints: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: '주요 포인트 3~5개'
-            },
-            detailedSummary: { type: Type.STRING, description: '상세 종합 요약' },
-            timelineSummary: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  timestamp: { type: Type.STRING },
-                  title: { type: Type.STRING },
-                  point: { type: Type.STRING }
-                },
-                required: ['timestamp', 'title', 'point']
-              },
-              description: '타임라인별 핵심 내용'
-            },
-            takeaways: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: '시사점 및 액션 플랜'
-            },
-            keywords: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: '핵심 키워드 4~6개'
-            },
-            sentiment: { type: Type.STRING, description: 'positive, neutral, caution, insightful' },
-            sentimentLabel: { type: Type.STRING, description: '성향 라벨' },
-            category: { type: Type.STRING, description: '추천 카테고리' },
-            readingTimeMinutes: { type: Type.INTEGER, description: '예상 읽기 시간' }
-          },
-          required: ['coreTopic', 'keyPoints', 'detailedSummary', 'takeaways', 'keywords', 'sentiment', 'sentimentLabel', 'category', 'readingTimeMinutes']
-        }
-      }
-    });
+    // Try primary and backup models in order
+    const candidateModels = ['gemini-3.7-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
 
-    const text = response.text;
-    if (text) {
-      return JSON.parse(text);
+    for (const modelName of candidateModels) {
+      try {
+        const responsePromise = ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            systemInstruction: '당신은 대한민국 최고의 유튜브 데이터 분석가입니다. 전문적이고 유익하며 한국어 맞춤법이 완벽한 JSON 포맷으로만 답변하세요.',
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                coreTopic: { type: Type.STRING, description: '영상의 핵심 주제 1문장' },
+                keyPoints: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: '주요 포인트 3~5개'
+                },
+                detailedSummary: { type: Type.STRING, description: '상세 종합 요약' },
+                timelineSummary: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      timestamp: { type: Type.STRING },
+                      title: { type: Type.STRING },
+                      point: { type: Type.STRING }
+                    },
+                    required: ['timestamp', 'title', 'point']
+                  },
+                  description: '타임라인별 핵심 내용'
+                },
+                takeaways: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: '시사점 및 액션 플랜'
+                },
+                keywords: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: '핵심 키워드 4~6개'
+                },
+                sentiment: { type: Type.STRING, description: 'positive, neutral, caution, insightful' },
+                sentimentLabel: { type: Type.STRING, description: '성향 라벨' },
+                category: { type: Type.STRING, description: '추천 카테고리' },
+                readingTimeMinutes: { type: Type.INTEGER, description: '예상 읽기 시간' }
+              },
+              required: ['coreTopic', 'keyPoints', 'detailedSummary', 'takeaways', 'keywords', 'sentiment', 'sentimentLabel', 'category', 'readingTimeMinutes']
+            }
+          }
+        });
+
+        // 12s timeout for each attempt
+        const timeoutPromise = new Promise<null>((_, reject) =>
+          setTimeout(() => reject(new Error('AI generation timeout')), 12000)
+        );
+
+        const response: any = await Promise.race([responsePromise, timeoutPromise]);
+        const text = response?.text;
+        if (text) {
+          const cleanedText = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+          const parsed = JSON.parse(cleanedText);
+          if (parsed && parsed.coreTopic && Array.isArray(parsed.keyPoints)) {
+            return { summary: parsed, aiPowered: true };
+          }
+        }
+      } catch (modelErr: any) {
+        console.warn(`Model ${modelName} failed, trying next:`, modelErr?.message || modelErr);
+      }
     }
-  } catch (err) {
-    console.warn('Gemini summary error:', err);
   }
 
-  return generateFallbackSummary(videoTitle, videoDescription, channelTitle, category);
+  // Fallback to high-quality smart contextual summary
+  const fallback = generateFallbackSummary(videoTitle, videoDescription, channelTitle, category);
+  return { summary: fallback, aiPowered: false };
 }
 
 // 3.5 Dedicated 24h Video Search & Instant AI Summarization
@@ -483,28 +499,30 @@ app.post('/api/youtube/search-24h-videos', async (req, res) => {
     // Sort by publication date descending (newest first)
     collectedVideos.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
 
-    // Auto-summarize recent videos with Gemini AI
+    // Auto-summarize recent videos (parallel batch of up to 6 for speed)
     if (autoSummarize && collectedVideos.length > 0) {
-      const toSummarize = collectedVideos.slice(0, 12);
-      for (const vid of toSummarize) {
-        try {
-          const summary = await summarizeVideoWithGemini(
-            vid.title,
-            vid.description,
-            vid.channelTitle,
-            vid.category,
-            'standard'
-          );
-          if (summary) {
-            vid.summary = summary;
+      const toSummarize = collectedVideos.slice(0, 8);
+      await Promise.allSettled(
+        toSummarize.map(async (vid) => {
+          try {
+            const result = await summarizeVideoWithGemini(
+              vid.title,
+              vid.description,
+              vid.channelTitle,
+              vid.category,
+              'standard'
+            );
+            if (result && result.summary) {
+              vid.summary = result.summary;
+              vid.isSummarized = true;
+            }
+          } catch (sumErr) {
+            console.warn(`Auto-summary failed for ${vid.title}:`, sumErr);
+            vid.summary = generateFallbackSummary(vid.title, vid.description, vid.channelTitle, vid.category);
             vid.isSummarized = true;
           }
-        } catch (sumErr) {
-          console.warn(`Auto-summary failed for ${vid.title}:`, sumErr);
-          vid.summary = generateFallbackSummary(vid.title, vid.description, vid.channelTitle, vid.category);
-          vid.isSummarized = true;
-        }
-      }
+        })
+      );
     }
 
     res.json({
@@ -529,95 +547,17 @@ app.post('/api/youtube/analyze-video', async (req, res) => {
       return res.status(400).json({ error: 'videoTitle is required' });
     }
 
-    const ai = getAI();
+    const { summary, aiPowered } = await summarizeVideoWithGemini(
+      videoTitle,
+      videoDescription || '',
+      channelTitle || '',
+      category || 'IT/테크',
+      detailLevel || 'standard'
+    );
 
-    if (ai) {
-      const prompt = `
-당신은 최고의 유튜브 콘텐츠 전문 분석가 및 지식 큐레이터입니다.
-아래 유튜브 영상의 제목, 설명, 채널 정보를 바탕으로 시청자가 영상을 직접 보지 않고도 모든 핵심 인사이트를 파악할 수 있도록 깊이 있고 체계적인 한국어 요약 보고서를 작성해주세요.
-
-[영상 정보]
-- 채널명: ${channelTitle || '미지정'}
-- 영상 제목: ${videoTitle}
-- 기본 카테고리: ${category || 'IT/테크'}
-- 영상 설명: ${videoDescription || '설명 없음'}
-- 요약 상세도: ${detailLevel || 'standard'} (concise: 간결핵심, standard: 표준상세, in-depth: 심층분석)
-
-[작성 요구사항]
-1. coreTopic: 영상 전체를 관통하는 명확하고 임팩트 있는 핵심 주제 1문장
-2. keyPoints: 영상의 가장 중요한 핵심 논점 및 사실 3~5개를 불릿포인트 문자열 배열로 작성
-3. detailedSummary: 논리적인 기승전결(배경, 핵심 내용, 결론)을 갖춘 3~5개 문장의 상세하고 풍부한 줄거리 요약
-4. timelineSummary: 영상의 흐름을 3~4개 구간(예: 00:00, 05:30 등)으로 나누어 각 구간별 소제목(title)과 핵심 요점(point) 정리
-5. takeaways: 시청자가 얻을 수 있는 실질적인 시사점, 인사이트 또는 액션 플랜 2~3개
-6. keywords: 핵심 검색 키워드 4~6개 (예: ["AI에이전트", "전력인프라", "테크트렌드"])
-7. sentiment: 'positive' | 'neutral' | 'caution' | 'insightful' 중 택1
-8. sentimentLabel: 성향 설명 라벨 (예: "미래 성장 전망 (긍정적)", "시장 변동성 주의", "심층 기술 분석")
-9. category: 적합한 카테고리 분류 ('IT/테크', '경제/재테크', '비즈니스/스타트업', '과학/지식', '뉴스/시사', '자기계발/교육', '라이프/엔터', '기타' 중 택1)
-10. readingTimeMinutes: 요약본을 읽는데 걸리는 예상 시간(분 단위 정수, 2~4)
-`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.7-flash',
-        contents: prompt,
-        config: {
-          systemInstruction: '당신은 대한민국 최고의 유튜브 데이터 분석가입니다. 전문적이고 유익하며 한국어 맞춤법이 완벽한 JSON 포맷으로만 답변하세요.',
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              coreTopic: { type: Type.STRING, description: '영상의 핵심 주제 1문장' },
-              keyPoints: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-                description: '주요 포인트 3~5개'
-              },
-              detailedSummary: { type: Type.STRING, description: '상세 종합 요약' },
-              timelineSummary: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    timestamp: { type: Type.STRING },
-                    title: { type: Type.STRING },
-                    point: { type: Type.STRING }
-                  },
-                  required: ['timestamp', 'title', 'point']
-                },
-                description: '타임라인별 핵심 내용'
-              },
-              takeaways: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-                description: '시사점 및 액션 플랜'
-              },
-              keywords: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-                description: '핵심 키워드 4~6개'
-              },
-              sentiment: { type: Type.STRING, description: 'positive, neutral, caution, insightful' },
-              sentimentLabel: { type: Type.STRING, description: '성향 라벨' },
-              category: { type: Type.STRING, description: '추천 카테고리' },
-              readingTimeMinutes: { type: Type.INTEGER, description: '예상 읽기 시간' }
-            },
-            required: ['coreTopic', 'keyPoints', 'detailedSummary', 'takeaways', 'keywords', 'sentiment', 'sentimentLabel', 'category', 'readingTimeMinutes']
-          }
-        }
-      });
-
-      const text = response.text;
-      if (text) {
-        const parsed = JSON.parse(text);
-        return res.json({ success: true, summary: parsed, aiPowered: true });
-      }
-    }
-
-    // Fallback heuristic summary generator
-    const fallbackSummary = generateFallbackSummary(videoTitle, videoDescription, channelTitle, category);
-    res.json({ success: true, summary: fallbackSummary, aiPowered: false });
+    return res.json({ success: true, summary, aiPowered });
   } catch (error: any) {
     console.error('Analyze video error:', error);
-    // Return high quality fallback on error so app never breaks
     const fallback = generateFallbackSummary(
       req.body.videoTitle || '유튜브 영상',
       req.body.videoDescription || '',
@@ -731,27 +671,55 @@ ${JSON.stringify(simplifiedVideos, null, 2)}
   }
 });
 
-// Helper functions for fallback generation
+// Helper functions for fallback generation with intelligent topic extraction
 function generateFallbackSummary(title: string, desc: string, channel: string, category: string) {
+  // Extract key phrases from title
+  const cleanTitle = title.replace(/^\[[^\]]+\]\s*/, '').replace(/^【[^】]+】\s*/, '');
+  const titleParts = cleanTitle
+    .split(/[-–—|:,/·•]/)
+    .map(p => p.trim())
+    .filter(p => p.length > 1 && !p.toLowerCase().startsWith('http'));
+
+  const subItems: string[] = [];
+  titleParts.forEach(part => {
+    const commaSplit = part.split(/[,，]/).map(s => s.trim().replace(/등$/, '').trim()).filter(s => s.length > 1);
+    subItems.push(...commaSplit);
+  });
+
+  const extractedTopics = Array.from(new Set(subItems)).slice(0, 5);
+
+  let keyPoints: string[] = [];
+  if (extractedTopics.length >= 2) {
+    keyPoints = extractedTopics.map(topic => `${topic}에 대한 핵심 동향 및 주요 배경 분석`);
+  } else {
+    keyPoints = [
+      `${channel || '해당 채널'}에서 집중 조명한 핵심 화두 및 기술/시장 배경 설명`,
+      `실제 사례와 최신 데이터에 기반한 주요 원인 및 파급 효과 분석`,
+      `향후 전개 방향 및 산업/투자자/실무자 관점에서의 실질적 영향 진단`,
+      `관련 기술 및 시장 변화에 대응하기 위한 핵심 고려사항과 대응 전략`
+    ];
+  }
+
+  const keywords = Array.from(new Set([
+    category || 'IT/테크',
+    ...extractedTopics.slice(0, 3),
+    channel || '유튜브'
+  ])).slice(0, 6);
+
   return {
-    coreTopic: `${title}에 대한 핵심 이슈 분석 및 심층 인사이트 요약`,
-    keyPoints: [
-      `${channel || '해당 채널'}에서 다룬 핵심 현안 및 주요 배경 설명`,
-      '데이터 및 실전 사례를 통한 주요 원인과 파급 효과 진단',
-      '향후 전개 방향 및 산업/개인에게 미치는 실질적 영향',
-      '관련 기술 및 시장 변화에 대응하기 위한 핵심 고려사항'
-    ],
-    detailedSummary: `본 영상에서는 '${title}'을 주제로 심도 있는 분석을 제공합니다. ${channel ? `${channel}의 관점에서 ` : ''}관련 이슈의 최신 동향과 원인을 짚어보고, 실제 시장과 현장에서 나타나는 구체적인 변화들을 다각도로 조명하고 있습니다.`,
+    coreTopic: `${cleanTitle}의 핵심 쟁점 분석 및 주요 시사점 요약`,
+    keyPoints,
+    detailedSummary: `본 영상은 '${cleanTitle}'을 주제로 ${channel ? `${channel} 채널에서 ` : ''}심층적인 정보와 통찰을 제시합니다. ${extractedTopics.length > 0 ? `특히 ${extractedTopics.slice(0, 3).join(', ')} 등 다각도의 핵심 쟁점을 체계적으로 다루고 있으며, ` : ''}관련 분야의 최신 트렌드와 파급 효과, 향후 대응 방안을 논리적으로 정리하고 있습니다.`,
     timelineSummary: [
-      { timestamp: '00:00', title: '도입 및 배경 소개', point: '주요 이슈 제기 및 핵심 논점 정리' },
-      { timestamp: '06:30', title: '심층 데이터 및 사례 분석', point: '현업 및 시장의 구체적인 반응과 현황' },
-      { timestamp: '14:20', title: '향후 전망 및 종합 결론', point: '핵심 시사점과 대응 전략 제시' }
+      { timestamp: '00:00', title: '주요 이슈 도입 및 개요', point: '핵심 주제 제시 및 배경 설명' },
+      { timestamp: '05:30', title: '심층 내용 및 주요 쟁점 분석', point: extractedTopics[0] ? `${extractedTopics[0]} 관련 상세 분석` : '데이터 및 현장 사례 검토' },
+      { timestamp: '12:45', title: '시사점 및 종합 결론', point: '향후 전망 및 실전 대응 전략 제시' }
     ],
     takeaways: [
-      '급변하는 산업/경제 환경에서 지속적인 트렌드 모니터링과 유연한 대응 전략 수립 필요',
-      '관련 핵심 기술 및 지표의 변동성을 면밀히 관찰하여 선제적 의사결정 추진 권고'
+      '급변하는 트렌드 속에서 핵심 변화 요인을 선제적으로 파악하고 유연하게 대응할 필요성',
+      '단편적인 정보보다는 생태계 전반의 흐름과 장기적 파급력을 고려한 의사결정 권고'
     ],
-    keywords: [category || '테크트렌드', '핵심요약', channel || '유튜브', '인사이트'],
+    keywords,
     sentiment: 'insightful' as const,
     sentimentLabel: '체계적 심층 분석 (통찰적)',
     category: category || 'IT/테크',

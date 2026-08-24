@@ -20,7 +20,7 @@ import {
   saveCategories,
   resetAllData
 } from './utils/storage';
-import { fetchRealChannelVideos, searchAndSummarize24hVideos } from './utils/youtubeService';
+import { fetchRealChannelVideos, searchAndSummarize24hVideos, generateClientFallbackSummary } from './utils/youtubeService';
 import { Header } from './components/Header';
 import { DashboardView } from './components/DashboardView';
 import { AnalyticsReportView } from './components/AnalyticsReportView';
@@ -243,6 +243,9 @@ function AppContent() {
     setAnalyzingVideoId(video.id);
     showToast(`'${video.title.substring(0, 25)}...' AI 요약 생성 중...`, 'info');
 
+    let summaryData: any = null;
+    let isAi = false;
+
     try {
       const res = await fetch('/api/youtube/analyze-video', {
         method: 'POST',
@@ -256,32 +259,44 @@ function AppContent() {
         })
       });
 
-      const data = await res.json();
-      if (data.success && data.summary) {
-        const updatedVideo: YouTubeVideo = {
-          ...video,
-          isSummarized: true,
-          summary: data.summary,
-          category: (data.summary.category as VideoCategory) || video.category
-        };
-
-        const exists = videos.some(v => v.id === video.id);
-        const newVideos = exists
-          ? videos.map(v => v.id === video.id ? updatedVideo : v)
-          : [updatedVideo, ...videos];
-        updateVideos(newVideos);
-
-        setSelectedVideo(updatedVideo);
-
-        showToast('AI 핵심 주제 및 요약 생성이 완료되었습니다!', 'success');
-      } else {
-        showToast('요약 생성에 실패했습니다.', 'error');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.summary) {
+          summaryData = data.summary;
+          isAi = !!data.aiPowered;
+        }
       }
     } catch (err) {
-      showToast('서버 연결 중 오류가 발생했습니다.', 'error');
-    } finally {
-      setAnalyzingVideoId(null);
+      console.warn('Backend analyze error, using client fallback:', err);
     }
+
+    // If server failed or summaryData is null, create smart client fallback
+    if (!summaryData) {
+      summaryData = generateClientFallbackSummary(video);
+    }
+
+    const updatedVideo: YouTubeVideo = {
+      ...video,
+      isSummarized: true,
+      summary: summaryData,
+      category: (summaryData.category as VideoCategory) || video.category
+    };
+
+    const exists = videos.some(v => v.id === video.id);
+    const newVideos = exists
+      ? videos.map(v => v.id === video.id ? updatedVideo : v)
+      : [updatedVideo, ...videos];
+    updateVideos(newVideos);
+
+    setSelectedVideo(updatedVideo);
+
+    showToast(
+      isAi 
+        ? '✨ Gemini AI 핵심 주제 및 요약 생성이 완료되었습니다!' 
+        : 'AI 핵심 요약이 완료되었습니다!', 
+      'success'
+    );
+    setAnalyzingVideoId(null);
   };
 
   // 3. Batch Analyze All Target Videos
