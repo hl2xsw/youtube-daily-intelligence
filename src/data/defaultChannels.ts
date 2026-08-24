@@ -86,6 +86,18 @@ export const DEFAULT_CHANNELS: YouTubeChannel[] = [
     addedAt: new Date().toISOString()
   },
   {
+    id: 'ch-sbsnews',
+    channelId: 'UCkinYTS9IHqOEwR1Sze2JTw',
+    title: 'SBS 뉴스',
+    handle: '@sbsnews8',
+    description: '대한민국 No.1 SBS뉴스 공식 채널입니다. 실시간 주요 속보 및 심층 보도',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/SqFZwlQcqLs4JMZd3lthkg79kCHi68eerNpkkahvEYSPWhm2afUNqFkbMC6J6JJcy9JJ_DzQ8w=s900-c-k-c0x00ffffff-no-rj',
+    category: '뉴스/시사',
+    isActive: true,
+    subscriberCount: '527만명',
+    addedAt: new Date().toISOString()
+  },
+  {
     id: 'ch-donga',
     channelId: 'UCbF7d7tNq9qD_yC6Xq7V6Qw',
     title: '동아일보 이슈포커스',
@@ -100,6 +112,36 @@ export const DEFAULT_CHANNELS: YouTubeChannel[] = [
 ];
 
 export const CHANNEL_PRESET_PACKS = [
+  {
+    name: '📰 주요 뉴스 & 24H 시사 미디어 팩',
+    description: '실시간 국내외 주요 속보, 탐사 보도 및 시사 브리핑 채널 모음',
+    channels: [
+      {
+        channelId: 'UCkinYTS9IHqOEwR1Sze2JTw',
+        title: 'SBS 뉴스',
+        handle: '@sbsnews8',
+        category: '뉴스/시사' as const,
+        thumbnailUrl: 'https://yt3.googleusercontent.com/SqFZwlQcqLs4JMZd3lthkg79kCHi68eerNpkkahvEYSPWhm2afUNqFkbMC6J6JJcy9JJ_DzQ8w=s900-c-k-c0x00ffffff-no-rj',
+        subscriberCount: '527만명'
+      },
+      {
+        channelId: 'UCF4Wxdo3inmxP-Y59wXDsFw',
+        title: 'MBCNEWS',
+        handle: '@MBCNEWS11',
+        category: '뉴스/시사' as const,
+        thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_nKpBrT7zzqTfdlfUHzw60wMU5KqV-kBmiFjU9dvMI8ePo=s900-c-k-c0x00ffffff-no-rj',
+        subscriberCount: '480만명'
+      },
+      {
+        channelId: 'UCTHCOPwqNfZ0uiKOvFyhGwg',
+        title: '연합뉴스TV',
+        handle: '@yonhapnewstv23',
+        category: '뉴스/시사' as const,
+        thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_k6k-Z5sA63aN66RkU8e7bS7yO9_hM8jD=s900-c-k-c0x00ffffff-no-rj',
+        subscriberCount: '270만명'
+      }
+    ]
+  },
   {
     name: '🚀 IT & AI 혁신 팩',
     description: '최신 인공지능, 개발 생태계 및 빅테크 트렌드 집중 모니터링',
