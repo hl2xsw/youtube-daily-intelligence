@@ -20,7 +20,7 @@ import {
   saveCategories,
   resetAllData
 } from './utils/storage';
-import { fetchRealChannelVideos, searchAndSummarize24hVideos, generateClientFallbackSummary } from './utils/youtubeService';
+import { fetchRealChannelVideos, searchAndSummarize24hVideos, generateClientFallbackSummary, syncAndRepairChannels } from './utils/youtubeService';
 import { Header } from './components/Header';
 import { DashboardView } from './components/DashboardView';
 import { AnalyticsReportView } from './components/AnalyticsReportView';
@@ -113,6 +113,19 @@ function AppContent() {
         }
       });
     }
+
+    // Auto-repair channel metadata if any dummy or un-resolved IDs exist
+    syncAndRepairChannels(initChannels).then(async ({ updatedChannels, hasChanges }) => {
+      if (hasChanges) {
+        setChannels(updatedChannels);
+        saveChannels(updatedChannels);
+        const synced = await syncChannelVideos(updatedChannels, validVideos);
+        if (synced && synced.length > 0) {
+          setVideos(synced);
+          saveVideos(synced);
+        }
+      }
+    });
   }, [syncChannelVideos]);
 
   // Save changes to storage
@@ -235,6 +248,22 @@ function AppContent() {
       showToast('24시간 영상 검색 및 분석 중 오류가 발생했습니다.', 'error');
     } finally {
       setIsSearching24h(false);
+    }
+  };
+
+  // 1-2. Sync & Repair Channel Metadata and Fetch Videos
+  const handleSyncRepairChannels = async () => {
+    showToast('등록된 채널의 실시간 YouTube ID 및 프로필 정보를 확인하고 복구합니다...', 'info');
+    try {
+      const { updatedChannels, hasChanges } = await syncAndRepairChannels(channels);
+      if (hasChanges) {
+        updateChannels(updatedChannels);
+      }
+      const syncedVideos = await syncChannelVideos(updatedChannels, videos);
+      updateVideos(syncedVideos);
+      showToast('채널 정보 동기화 및 영상 수집 복구가 완료되었습니다!', 'success');
+    } catch (e) {
+      showToast('채널 정보 동기화 중 오류가 발생했습니다.', 'error');
     }
   };
 
@@ -556,6 +585,7 @@ function AppContent() {
             onToggleChannelActive={handleToggleChannelActive}
             onChangeChannelCategory={handleChangeChannelCategory}
             onAddPresetPack={handleAddPresetPack}
+            onSyncRepairChannels={handleSyncRepairChannels}
             settings={settings}
             onUpdateSettings={updateSettings}
             onResetAllData={handleResetData}

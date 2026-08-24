@@ -144,12 +144,23 @@ export function parseYouTubeRssXml(
   return videos;
 }
 
+// Helper to construct exact YouTube Channel direct shortcut URL
+export function getYouTubeChannelUrl(channel: { channelId?: string; handle?: string; title?: string }): string {
+  if (channel.handle && channel.handle.trim()) {
+    const cleanH = channel.handle.trim().startsWith('@') ? channel.handle.trim() : `@${channel.handle.trim()}`;
+    return `https://www.youtube.com/${cleanH}`;
+  }
+  if (channel.channelId && channel.channelId.startsWith('UC') && !channel.channelId.startsWith('UC_') && channel.channelId.length >= 22) {
+    return `https://www.youtube.com/channel/${channel.channelId}`;
+  }
+  if (channel.title) {
+    return `https://www.youtube.com/results?search_query=${encodeURIComponent(channel.title)}`;
+  }
+  return 'https://www.youtube.com';
+}
+
 // Fetch Channel Videos via RSS (with server API + client CORS proxy fallbacks)
 export async function fetchRealChannelVideos(channel: YouTubeChannel): Promise<YouTubeVideo[]> {
-  if (!channel.channelId || !channel.channelId.startsWith('UC')) {
-    return [];
-  }
-
   // 1. Try server-side proxy API if running in fullstack mode
   try {
     const res = await fetch('/api/youtube/fetch-rss', {
@@ -158,6 +169,7 @@ export async function fetchRealChannelVideos(channel: YouTubeChannel): Promise<Y
       body: JSON.stringify({
         channelId: channel.channelId,
         channelTitle: channel.title,
+        handle: channel.handle,
         category: channel.category
       })
     });
@@ -184,30 +196,32 @@ export async function fetchRealChannelVideos(channel: YouTubeChannel): Promise<Y
     // Continue to client-side fallback
   }
 
-  // 2. Client-side CORS proxy fallback (for static GitHub Pages hosting)
-  const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channel.channelId)}`;
-  const proxyUrls = [
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(rssUrl)}`,
-    `https://corsproxy.io/?${encodeURIComponent(rssUrl)}`
-  ];
+  // 2. If valid UC channel ID, try Client-side CORS proxy fallback (for static GitHub Pages hosting)
+  if (channel.channelId && channel.channelId.startsWith('UC') && !channel.channelId.startsWith('UC_')) {
+    const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channel.channelId)}`;
+    const proxyUrls = [
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(rssUrl)}`,
+      `https://corsproxy.io/?${encodeURIComponent(rssUrl)}`
+    ];
 
-  for (const proxyUrl of proxyUrls) {
-    try {
-      const response = await fetch(proxyUrl);
-      if (response.ok) {
-        const text = await response.text();
-        const parsed = parseYouTubeRssXml(text, {
-          channelId: channel.channelId,
-          channelTitle: channel.title,
-          channelThumbnail: channel.thumbnailUrl,
-          category: channel.category
-        });
-        if (parsed.length > 0) {
-          return parsed;
+    for (const proxyUrl of proxyUrls) {
+      try {
+        const response = await fetch(proxyUrl);
+        if (response.ok) {
+          const text = await response.text();
+          const parsed = parseYouTubeRssXml(text, {
+            channelId: channel.channelId,
+            channelTitle: channel.title,
+            channelThumbnail: channel.thumbnailUrl,
+            category: channel.category
+          });
+          if (parsed.length > 0) {
+            return parsed;
+          }
         }
+      } catch {
+        // try next proxy
       }
-    } catch {
-      // try next proxy
     }
   }
 
@@ -261,6 +275,50 @@ export async function searchAndSummarize24hVideos(channels: YouTubeChannel[]): P
     within24hCount: allVideos.filter(v => v.isWithin24h).length,
     yesterdayCount: allVideos.filter(v => v.isYesterday).length
   };
+}
+
+// Auto Repair & Sync Channels metadata (e.g. resolve dummy UC_ IDs, update titles and real thumbnails)
+export async function syncAndRepairChannels(channels: YouTubeChannel[]): Promise<{
+  updatedChannels: YouTubeChannel[];
+  hasChanges: boolean;
+}> {
+  let hasChanges = false;
+  const updatedList: YouTubeChannel[] = [];
+
+  for (const ch of channels) {
+    const needsRepair = 
+      !ch.channelId || 
+      ch.channelId.startsWith('UC_') || 
+      ch.channelId.length < 22 ||
+      ch.title.startsWith('http') ||
+      !ch.thumbnailUrl ||
+      ch.thumbnailUrl.includes('unsplash');
+
+    if (needsRepair) {
+      try {
+        const lookup = await lookupYouTubeChannel(ch.handle || ch.title || ch.channelId);
+        if (lookup && lookup.channelId && lookup.channelId.startsWith('UC') && !lookup.channelId.startsWith('UC_')) {
+          hasChanges = true;
+          updatedList.push({
+            ...ch,
+            channelId: lookup.channelId,
+            title: lookup.title || ch.title,
+            handle: lookup.handle || ch.handle,
+            description: lookup.description || ch.description,
+            thumbnailUrl: lookup.thumbnailUrl || ch.thumbnailUrl,
+            subscriberCount: lookup.subscriberCount || ch.subscriberCount
+          });
+          continue;
+        }
+      } catch (err) {
+        console.warn(`Channel repair failed for ${ch.title}:`, err);
+      }
+    }
+
+    updatedList.push(ch);
+  }
+
+  return { updatedChannels: updatedList, hasChanges };
 }
 
 // Real Channel Lookup

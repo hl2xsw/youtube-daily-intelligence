@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { YouTubeChannel, VideoCategory, AppSettings } from '../types';
 import { CHANNEL_PRESET_PACKS } from '../data/defaultChannels';
-import { lookupYouTubeChannel } from '../utils/youtubeService';
+import { lookupYouTubeChannel, getYouTubeChannelUrl } from '../utils/youtubeService';
 import { 
   Plus, 
   Trash2, 
@@ -21,7 +21,8 @@ import {
   PackagePlus, 
   FolderPlus, 
   Tag, 
-  X 
+  X,
+  RefreshCw
 } from 'lucide-react';
 import { useToast } from './Toast';
 
@@ -35,6 +36,7 @@ interface SettingsViewProps {
   onToggleChannelActive: (channelId: string) => void;
   onChangeChannelCategory: (channelId: string, category: VideoCategory) => void;
   onAddPresetPack: (packChannels: any[]) => void;
+  onSyncRepairChannels?: () => Promise<void>;
   settings: AppSettings;
   onUpdateSettings: (newSettings: Partial<AppSettings>) => void;
   onResetAllData: () => void;
@@ -61,6 +63,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onToggleChannelActive,
   onChangeChannelCategory,
   onAddPresetPack,
+  onSyncRepairChannels,
   settings,
   onUpdateSettings,
   onResetAllData
@@ -71,6 +74,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [channelInput, setChannelInput] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<VideoCategory>(categories[0] || 'IT/테크');
   const [isLookingUp, setIsLookingUp] = useState(false);
+  const [isSyncingChannels, setIsSyncingChannels] = useState(false);
   const [searchChannelFilter, setSearchChannelFilter] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('ALL');
   const [channelToDelete, setChannelToDelete] = useState<YouTubeChannel | null>(null);
@@ -327,7 +331,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
           <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
             {/* Search channel in list */}
-            <div className="relative w-full sm:w-52">
+            <div className="relative w-full sm:w-48">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
@@ -337,6 +341,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 className="w-full pl-7 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:bg-white text-slate-900"
               />
             </div>
+
+            {/* Sync & Repair Channels Button */}
+            {onSyncRepairChannels && (
+              <button
+                type="button"
+                disabled={isSyncingChannels}
+                onClick={async () => {
+                  setIsSyncingChannels(true);
+                  try {
+                    await onSyncRepairChannels();
+                  } finally {
+                    setIsSyncingChannels(false);
+                  }
+                }}
+                className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-2xs transition-colors flex items-center gap-1 shrink-0 disabled:opacity-50"
+                title="모든 등록 채널의 YouTube ID와 프로필 정보를 최신 상태로 동기화하고 수집 오류를 복구합니다."
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${isSyncingChannels ? 'animate-spin' : ''}`} />
+                <span>{isSyncingChannels ? '복구/동기화 중...' : '정보 동기화/복구'}</span>
+              </button>
+            )}
 
             {/* Create Category Button */}
             <button
@@ -506,91 +531,125 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {/* Channel Cards / List */}
         <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg overflow-hidden">
-          {filteredChannels.map(channel => (
-            <div 
-              key={channel.id}
-              className="p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:bg-slate-50/80 transition-colors bg-white"
-            >
-              {/* Channel Info */}
-              <div className="flex items-center gap-3 min-w-0">
-                <img
-                  src={channel.thumbnailUrl}
-                  alt={channel.title}
-                  referrerPolicy="no-referrer"
-                  className="w-9 h-9 rounded-full object-cover border border-slate-200 shrink-0"
-                />
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h4 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">
-                      {channel.title}
-                    </h4>
-                    {channel.handle && (
-                      <span className="text-[11px] text-slate-400 font-mono">
-                        {channel.handle}
-                      </span>
-                    )}
-                    {channel.subscriberCount && (
-                      <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded text-[10px] font-medium">
-                        {channel.subscriberCount}
-                      </span>
+          {filteredChannels.map(channel => {
+            const channelUrl = getYouTubeChannelUrl(channel);
+
+            return (
+              <div 
+                key={channel.id}
+                className="p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:bg-slate-50/80 transition-colors bg-white"
+              >
+                {/* Channel Info */}
+                <div className="flex items-center gap-3 min-w-0">
+                  <a
+                    href={channelUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="relative group/avatar shrink-0 block"
+                    title={`'${channel.title}' 유튜브 채널로 이동`}
+                  >
+                    <img
+                      src={channel.thumbnailUrl}
+                      alt={channel.title}
+                      referrerPolicy="no-referrer"
+                      className="w-9 h-9 rounded-full object-cover border border-slate-200 group-hover/avatar:ring-2 group-hover/avatar:ring-red-500 transition-all"
+                    />
+                    <div className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover/avatar:opacity-100 flex items-center justify-center text-white transition-opacity">
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </div>
+                  </a>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <a
+                        href={channelUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs sm:text-sm font-semibold text-slate-900 hover:text-red-600 truncate flex items-center gap-1 group/title transition-colors"
+                        title={`'${channel.title}' 유튜브 채널 새 탭에서 열기`}
+                      >
+                        <span className="truncate">{channel.title}</span>
+                        <ExternalLink className="w-3 h-3 text-slate-400 group-hover/title:text-red-500 transition-colors shrink-0" />
+                      </a>
+                      {channel.handle && (
+                        <span className="text-[11px] text-slate-400 font-mono">
+                          {channel.handle}
+                        </span>
+                      )}
+                      {channel.subscriberCount && (
+                        <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded text-[10px] font-medium">
+                          {channel.subscriberCount}
+                        </span>
+                      )}
+                    </div>
+                    {channel.description && (
+                      <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">
+                        {channel.description}
+                      </p>
                     )}
                   </div>
-                  {channel.description && (
-                    <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">
-                      {channel.description}
-                    </p>
-                  )}
                 </div>
-              </div>
 
-              {/* Controls */}
-              <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
-                {/* Category Changer */}
-                <div className="flex items-center gap-1">
-                  <select
-                    value={channel.category}
-                    onChange={(e) => {
-                      if (e.target.value === '__CREATE_NEW__') {
-                        setIsCreatingCategory(true);
-                      } else {
-                        onChangeChannelCategory(channel.id, e.target.value as VideoCategory);
-                      }
-                    }}
-                    className="px-2 py-1 text-xs font-medium rounded-md border border-slate-200 bg-slate-50 text-slate-700 cursor-pointer hover:border-slate-300 focus:outline-none"
+                {/* Controls */}
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                  {/* YouTube Channel Direct Link Button (바로가기) */}
+                  <a
+                    href={channelUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 hover:text-red-700 border border-red-200/80 rounded-md transition-colors shrink-0 shadow-2xs group/btn"
+                    title={`'${channel.title}' 유튜브 채널 페이지 새 탭에서 열기`}
                   >
-                    {categories.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                    <option value="__CREATE_NEW__">+ 새 카테고리 생성...</option>
-                  </select>
+                    <span>바로가기</span>
+                    <ExternalLink className="w-3 h-3 text-red-500 group-hover/btn:translate-x-0.5 transition-transform" />
+                  </a>
+
+                  {/* Category Changer */}
+                  <div className="flex items-center gap-1">
+                    <select
+                      value={channel.category}
+                      onChange={(e) => {
+                        if (e.target.value === '__CREATE_NEW__') {
+                          setIsCreatingCategory(true);
+                        } else {
+                          onChangeChannelCategory(channel.id, e.target.value as VideoCategory);
+                        }
+                      }}
+                      className="px-2 py-1 text-xs font-medium rounded-md border border-slate-200 bg-slate-50 text-slate-700 cursor-pointer hover:border-slate-300 focus:outline-none"
+                    >
+                      {categories.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                      <option value="__CREATE_NEW__">+ 새 카테고리 생성...</option>
+                    </select>
+                  </div>
+
+                  {/* Active / Pause Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => onToggleChannelActive(channel.id)}
+                    className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${
+                      channel.isActive
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-slate-100 text-slate-400 border border-slate-200'
+                    }`}
+                    title={channel.isActive ? '모니터링 활성 상태' : '모니터링 일시정지 상태'}
+                  >
+                    {channel.isActive ? '수집 활성' : '일시정지'}
+                  </button>
+
+                  {/* Delete Channel Button */}
+                  <button
+                    type="button"
+                    onClick={() => setChannelToDelete(channel)}
+                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
+                    title="채널 삭제"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-
-                {/* Active / Pause Toggle */}
-                <button
-                  type="button"
-                  onClick={() => onToggleChannelActive(channel.id)}
-                  className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${
-                    channel.isActive
-                      ? 'bg-slate-900 text-white'
-                      : 'bg-slate-100 text-slate-400 border border-slate-200'
-                  }`}
-                  title={channel.isActive ? '모니터링 활성 상태' : '모니터링 일시정지 상태'}
-                >
-                  {channel.isActive ? '수집 활성' : '일시정지'}
-                </button>
-
-                {/* Delete Channel Button */}
-                <button
-                  type="button"
-                  onClick={() => setChannelToDelete(channel)}
-                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
-                  title="채널 삭제"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {filteredChannels.length === 0 && (
             <div className="p-6 text-center text-xs text-slate-500">
