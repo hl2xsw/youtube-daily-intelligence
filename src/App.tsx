@@ -49,40 +49,42 @@ function AppContent() {
   const [analyzingVideoId, setAnalyzingVideoId] = useState<string | null>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
 
-  // Sync real videos for channels
+  // Sync real videos for channels in parallel
   const syncChannelVideos = useCallback(async (targetChannels: YouTubeChannel[], existingVideos: YouTubeVideo[]) => {
     const active = targetChannels.filter(c => c.isActive);
     if (active.length === 0) return existingVideos;
 
     let updatedList = [...existingVideos];
 
-    for (const channel of active) {
-      try {
-        const realVideos = await fetchRealChannelVideos(channel);
-        if (realVideos && realVideos.length > 0) {
-          for (const v of realVideos) {
-            const existsIdx = updatedList.findIndex(e => e.videoId === v.videoId);
-            if (existsIdx >= 0) {
-              updatedList[existsIdx] = {
-                ...v,
-                isSummarized: updatedList[existsIdx].isSummarized,
-                summary: updatedList[existsIdx].summary || v.summary,
-                isBookmarked: updatedList[existsIdx].isBookmarked
-              };
-            } else {
-              updatedList = [v, ...updatedList];
-            }
+    // Fetch all active channels concurrently
+    const results = await Promise.allSettled(
+      active.map(channel => fetchRealChannelVideos(channel))
+    );
+
+    for (const res of results) {
+      if (res.status === 'fulfilled' && res.value && res.value.length > 0) {
+        for (const v of res.value) {
+          const existsIdx = updatedList.findIndex(e => e.videoId === v.videoId);
+          if (existsIdx >= 0) {
+            updatedList[existsIdx] = {
+              ...v,
+              isSummarized: updatedList[existsIdx].isSummarized,
+              summary: updatedList[existsIdx].summary || v.summary,
+              isBookmarked: updatedList[existsIdx].isBookmarked
+            };
+          } else {
+            updatedList = [v, ...updatedList];
           }
         }
-      } catch (err) {
-        console.warn(`Failed to sync videos for ${channel.title}`, err);
       }
     }
 
-    // Keep only videos that belong to existing channels
+    // Keep only videos that belong to existing channels and sort newest first
     const validChannelIds = new Set(targetChannels.map(c => c.channelId));
     const validTitles = new Set(targetChannels.map(c => c.title));
-    const cleanedList = updatedList.filter(v => validChannelIds.has(v.channelId) || validTitles.has(v.channelTitle));
+    const cleanedList = updatedList
+      .filter(v => validChannelIds.has(v.channelId) || validTitles.has(v.channelTitle))
+      .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
 
     return cleanedList;
   }, []);
@@ -475,8 +477,16 @@ function AppContent() {
   const handleAddPresetPack = async (packChannels: any[]) => {
     let addedCount = 0;
     let current = [...channels];
+    let currentCategories = [...categories];
+
     for (const p of packChannels) {
-      const exists = current.some(c => c.channelId === p.channelId);
+      if (p.category && !currentCategories.includes(p.category)) {
+        currentCategories.push(p.category);
+      }
+      const exists = current.some(c => 
+        c.channelId === p.channelId || 
+        (c.handle && p.handle && c.handle.toLowerCase() === p.handle.toLowerCase())
+      );
       if (!exists) {
         current.push({
           id: `ch-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
@@ -493,7 +503,18 @@ function AppContent() {
       }
     }
     updateChannels(current);
-    showToast(`프리셋에서 ${addedCount}개 채널이 추가되었습니다. 영상을 불러옵니다...`, 'success');
+    updateCategories(currentCategories);
+
+    showToast(
+      addedCount > 0 
+        ? `프리셋에서 ${addedCount}개 채널이 추가되었습니다. 최신 영상을 동기화합니다...` 
+        : '선택한 프리셋 채널의 최신 영상을 새로고침합니다...', 
+      'success'
+    );
+    
+    // Switch to dashboard view so user immediately sees newly added videos
+    setActiveTab('dashboard');
+
     const synced = await syncChannelVideos(current, videos);
     updateVideos(synced);
   };

@@ -879,24 +879,26 @@ app.post('/api/youtube/search-24h-videos', async (req, res) => {
     const collectedVideos: any[] = [];
     const seenVideoIds = new Set<string>();
 
-    for (const ch of activeChannels) {
-      try {
-        const { videos } = await fetchVideosForChannelUniversal(ch);
-        for (const vid of videos) {
+    // Parallel fetch across all active channels for high throughput
+    const fetchResults = await Promise.allSettled(
+      activeChannels.map(ch => fetchVideosForChannelUniversal(ch))
+    );
+
+    for (const result of fetchResults) {
+      if (result.status === 'fulfilled' && result.value?.videos) {
+        for (const vid of result.value.videos) {
           if (!seenVideoIds.has(vid.videoId)) {
             seenVideoIds.add(vid.videoId);
             collectedVideos.push(vid);
           }
         }
-      } catch (chErr) {
-        console.warn(`24h search error for ${ch.title}:`, chErr);
       }
     }
 
     // Sort by publication date descending (newest first)
     collectedVideos.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
 
-    // Auto-summarize recent videos (parallel batch of up to 6 for speed)
+    // Auto-summarize recent videos (parallel batch of up to 8 for speed)
     if (autoSummarize && collectedVideos.length > 0) {
       const toSummarize = collectedVideos.slice(0, 8);
       await Promise.allSettled(
