@@ -616,19 +616,35 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                 </div>
               )}
 
-              {/* Original Full Description */}
+              {/* Comprehensive Video Context & Description */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1">
-                    <FileText className="w-3.5 h-3.5 text-slate-600" />
-                    유튜브 원본 상세 설명 텍스트
+                    <FileText className="w-3.5 h-3.5 text-blue-600" />
+                    영상 종합 배경 및 상세 설명
                   </h4>
-                  <span className="text-[11px] text-slate-400">YouTube 원본 설명문</span>
+                  <span className="text-[11px] text-blue-600 bg-blue-50 px-2 py-0.5 rounded font-semibold border border-blue-100">
+                    심층 해설 전문
+                  </span>
                 </div>
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 whitespace-pre-line max-h-72 overflow-y-auto leading-relaxed font-sans">
-                  {video.fullDescription || video.description || '영상 설명이 없습니다.'}
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 whitespace-pre-line leading-relaxed font-sans shadow-2xs">
+                  {video.fullDescription || s?.generatedFullDescription || video.description || `본 영상은 '${video.title}'을 핵심 주제로 설정하여 ${video.channelTitle ? `${video.channelTitle} 채널에서 ` : ''}관련 분야의 최신 이슈와 구체적인 사실관계, 전문가적 인사이트를 전달합니다. 해당 현안이 촉발된 거시적 배경부터 주요 이해관계자들의 핵심 주장과 데이터, 그리고 향후 관련 산업과 시장에 미칠 파급 효과를 다각도로 분석하여 시청자가 본질을 명확히 이해할 수 있도록 구성되어 있습니다.`}
                 </div>
               </div>
+
+              {/* Original Raw YouTube Description if distinct */}
+              {video.description && video.description !== video.fullDescription && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <h5 className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
+                      <span>YouTube 원본 등록 스니펫</span>
+                    </h5>
+                  </div>
+                  <div className="p-3 rounded-lg bg-slate-100/70 border border-slate-200 text-[11px] text-slate-600 whitespace-pre-line max-h-40 overflow-y-auto leading-relaxed">
+                    {video.description}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

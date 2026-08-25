@@ -16,6 +16,7 @@ export interface YouTubeChannel {
 
 export interface VideoSummary {
   coreTopic: string; // 핵심 주제
+  generatedFullDescription?: string; // 생성된 영상 상세 배경 및 맥락 해설
   keyPoints: string[]; // 주요 포인트 목록
   detailedSummary: string; // 상세 맥락 요약 (Markdown 지원)
   timelineSummary?: { timestamp: string; title: string; point: string }[];
