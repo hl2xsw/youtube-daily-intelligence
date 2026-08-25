@@ -465,49 +465,76 @@ export function generateClientFallbackSummary(video: YouTubeVideo) {
     .map(p => p.trim())
     .filter(p => p.length > 1 && !p.toLowerCase().startsWith('http'));
 
-  const subItems: string[] = [];
-  titleParts.forEach(part => {
-    const commaSplit = part.split(/[,，]/).map(s => s.trim().replace(/등$/, '').trim()).filter(s => s.length > 1);
-    subItems.push(...commaSplit);
-  });
+  const rawDesc = video.fullDescription || video.description || '';
+  const descLines = rawDesc
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 12 && !l.startsWith('http') && !l.includes('구독') && !l.includes('인스타그램') && !l.includes('광고'));
 
-  const extractedTopics = Array.from(new Set(subItems)).slice(0, 5);
+  const speakers: Array<{ speaker: string; stance: string; mainArgument: string }> = [];
+  const speakerMatch = cleanTitle.match(/([가-힣]{2,4})\s*[xX×및,]\s*([가-힣]{2,4})(?:\s*[xX×및,]\s*([가-힣]{2,4}))?/);
+  if (speakerMatch) {
+    const sp1 = speakerMatch[1];
+    const sp2 = speakerMatch[2];
+    const sp3 = speakerMatch[3];
+    if (sp1) speakers.push({ speaker: sp1, stance: '핵심 발표/패널', mainArgument: `${cleanTitle}의 핵심 현안 진단 및 쟁점 제시` });
+    if (sp2) speakers.push({ speaker: sp2, stance: '전문가 패널', mainArgument: '시장 리스크 요인 및 현장 분석' });
+    if (sp3) speakers.push({ speaker: sp3, stance: '진행/종합', mainArgument: '정책 및 기술 방향성 정리' });
+  }
 
   let keyPoints: string[] = [];
-  if (extractedTopics.length >= 2) {
-    keyPoints = extractedTopics.map(topic => `${topic}에 대한 핵심 동향 및 주요 배경 분석`);
+  if (descLines.length >= 3) {
+    keyPoints = descLines.slice(0, 4).map(l => l.length > 120 ? `${l.substring(0, 118)}...` : l);
+  } else if (titleParts.length >= 2) {
+    keyPoints = titleParts.slice(0, 4).map(tp => `${tp}에 대한 실제 현장 데이터와 정책적 배경 및 시장 파급 효과 분석`);
   } else {
     keyPoints = [
-      `${video.channelTitle || '해당 채널'}에서 집중 조명한 핵심 화두 및 기술/시장 배경 설명`,
+      `${video.channelTitle || '해당 채널'}에서 집중 조명한 핵심 화두 및 기술/시장 배경 분석`,
       '실제 사례와 최신 데이터에 기반한 주요 원인 및 파급 효과 분석',
       '향후 전개 방향 및 산업/투자자/실무자 관점에서의 실질적 영향 진단',
       '관련 기술 및 시장 변화에 대응하기 위한 핵심 고려사항과 대응 전략'
     ];
   }
 
+  const detailedSummaryMarkdown = `
+### 1. 논의 배경 및 핵심 문제 제기
+본 영상은 '${cleanTitle}'을 주제로 ${video.channelTitle ? `${video.channelTitle} 채널에서 ` : ''}심층적인 사실관계와 전문적 시각을 다룹니다. ${descLines[0] ? descLines[0] : '최근 시장과 기술 환경의 급격한 변화 속에서 가장 주목받는 이슈를 다각도로 조명하고 있습니다.'}
+
+### 2. 주요 주장 및 심층 분석
+${descLines.length > 1 ? descLines.slice(1, 3).join('\n\n') : `${cleanTitle}에 관련된 구체적인 메커니즘과 현장 데이터를 바탕으로 구조적인 변화 요인을 집중 분석합니다.`}
+
+### 3. 시장/산업 파급 효과 및 리스크
+관련 분야의 급격한 변동성과 정책적 불확실성에 유의할 필요가 있으며, 각 주체별(투자자, 기업, 실무자)로 선제적인 리스크 관리와 포트폴리오 재점검이 필수적입니다.
+
+### 4. 종합 전망 및 결론
+단기적인 노이즈에 매몰되기보다 본질적인 펀더멘털과 중장기 트렌드에 주목해야 하며, 향후 발표될 후속 지표와 일정에 맞춘 유연한 대응 전략을 권고합니다.
+  `.trim();
+
   const keywords = Array.from(new Set([
     video.category || 'IT/테크',
-    ...extractedTopics.slice(0, 3),
+    ...titleParts.slice(0, 3),
     video.channelTitle || '유튜브'
   ])).slice(0, 6);
 
   return {
-    coreTopic: `${cleanTitle}의 핵심 쟁점 분석 및 주요 시사점 요약`,
+    coreTopic: `${cleanTitle}의 핵심 쟁점 심층 분석 및 실전 대응 전략`,
     keyPoints,
-    detailedSummary: `본 영상은 '${cleanTitle}'을 주제로 ${video.channelTitle ? `${video.channelTitle} 채널에서 ` : ''}심층적인 정보와 통찰을 제시합니다. ${extractedTopics.length > 0 ? `특히 ${extractedTopics.slice(0, 3).join(', ')} 등 다각도의 핵심 쟁점을 체계적으로 다루고 있으며, ` : ''}관련 분야의 최신 트렌드와 파급 효과, 향후 대응 방안을 논리적으로 정리하고 있습니다.`,
+    detailedSummary: detailedSummaryMarkdown,
     timelineSummary: [
-      { timestamp: '00:00', title: '주요 이슈 도입 및 개요', point: '핵심 주제 제시 및 배경 설명' },
-      { timestamp: '05:30', title: '심층 내용 및 주요 쟁점 분석', point: extractedTopics[0] ? `${extractedTopics[0]} 관련 상세 분석` : '데이터 및 현장 사례 검토' },
+      { timestamp: '00:00', title: '주요 이슈 도입 및 개요', point: `${titleParts[0] || cleanTitle} 관련 최신 동향 및 핵심 배경 설명` },
+      { timestamp: '05:30', title: '심층 데이터 및 핵심 논거 분석', point: titleParts[1] ? `${titleParts[1]} 관련 심층 분석 및 쟁점 진단` : '시장 데이터 및 실제 사례 검토' },
       { timestamp: '12:45', title: '시사점 및 종합 결론', point: '향후 전망 및 실전 대응 전략 제시' }
     ],
     takeaways: [
-      '급변하는 트렌드 속에서 핵심 변화 요인을 선제적으로 파악하고 유연하게 대응할 필요성',
-      '단편적인 정보보다는 생태계 전반의 흐름과 장기적 파급력을 고려한 의사결정 권고'
+      '급변하는 대외 변수 속에서 핵심 변화 요인을 선제적으로 파악하고 리스크 관리 강화',
+      '단편적 뉴스보다 펀더멘털 데이터와 정책적 방향성에 기반한 중장기 의사결정 수립'
     ],
+    speakerInsights: speakers.length > 0 ? speakers : undefined,
+    keyQuotes: descLines[0] ? [descLines[0].substring(0, 80)] : undefined,
     keywords,
     sentiment: 'insightful' as const,
     sentimentLabel: '체계적 심층 분석 (통찰적)',
     category: video.category || 'IT/테크',
-    readingTimeMinutes: 2
+    readingTimeMinutes: 3
   };
 }

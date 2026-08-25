@@ -270,23 +270,29 @@ function AppContent() {
   };
 
   // 2. Analyze Single Video
-  const handleAnalyzeVideo = async (video: YouTubeVideo) => {
+  const handleAnalyzeVideo = async (video: YouTubeVideo, overrideDetailLevel?: 'concise' | 'standard' | 'in-depth') => {
     setAnalyzingVideoId(video.id);
-    showToast(`'${video.title.substring(0, 25)}...' AI 요약 생성 중...`, 'info');
+    const detailMode = overrideDetailLevel || settings.summaryDetailLevel || 'standard';
+    showToast(`'${video.title.substring(0, 22)}...' ${detailMode === 'in-depth' ? '심층 정밀' : ''} AI 분석 중...`, 'info');
 
     let summaryData: any = null;
     let isAi = false;
+    let fetchedFullDesc = video.fullDescription;
+    let fetchedTranscript = video.transcript;
 
     try {
       const res = await fetch('/api/youtube/analyze-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          videoId: video.videoId,
           videoTitle: video.title,
           videoDescription: video.description,
+          fullDescription: video.fullDescription,
+          transcript: video.transcript,
           channelTitle: video.channelTitle,
           category: video.category,
-          detailLevel: settings.summaryDetailLevel
+          detailLevel: detailMode
         })
       });
 
@@ -295,21 +301,28 @@ function AppContent() {
         if (data.success && data.summary) {
           summaryData = data.summary;
           isAi = !!data.aiPowered;
+          if (data.fullDescription) fetchedFullDesc = data.fullDescription;
+          if (data.transcript) fetchedTranscript = data.transcript;
         }
       }
     } catch (err) {
       console.warn('Backend analyze error, using client fallback:', err);
     }
 
-    // If server failed or summaryData is null, create smart client fallback
+    // If server failed or summaryData is null, create smart contextual client fallback
     if (!summaryData) {
-      summaryData = generateClientFallbackSummary(video);
+      summaryData = generateClientFallbackSummary({
+        ...video,
+        fullDescription: fetchedFullDesc
+      });
     }
 
     const updatedVideo: YouTubeVideo = {
       ...video,
       isSummarized: true,
       summary: summaryData,
+      fullDescription: fetchedFullDesc || video.fullDescription,
+      transcript: fetchedTranscript || video.transcript,
       category: (summaryData.category as VideoCategory) || video.category
     };
 
@@ -323,8 +336,8 @@ function AppContent() {
 
     showToast(
       isAi 
-        ? '✨ Gemini AI 핵심 주제 및 요약 생성이 완료되었습니다!' 
-        : 'AI 핵심 요약이 완료되었습니다!', 
+        ? `✨ Gemini 3.7 AI 정밀 영상 분석 및 상세 요약이 완료되었습니다! ${fetchedTranscript ? '(자막 분석 포함)' : ''}` 
+        : '영상 상세 분석 및 핵심 요약이 완료되었습니다!', 
       'success'
     );
     setAnalyzingVideoId(null);

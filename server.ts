@@ -932,42 +932,232 @@ app.post('/api/youtube/fetch-rss', async (req, res) => {
   }
 });
 
-// Helper function to summarize video using Gemini AI with multi-model fallback
+// Helper function to extract full YouTube video details, chapters, and captions/transcript
+async function fetchYouTubeVideoDetailsAndTranscript(videoId: string): Promise<{
+  fullDescription: string;
+  transcript: string;
+  chapters: Array<{ timestamp: string; title: string }>;
+  tags: string[];
+}> {
+  let fullDescription = '';
+  let transcript = '';
+  const chapters: Array<{ timestamp: string; title: string }> = [];
+  let tags: string[] = [];
+
+  if (!videoId || videoId.length < 5) {
+    return { fullDescription, transcript, chapters, tags };
+  }
+
+  try {
+    const videoPageUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const pageRes = await fetch(videoPageUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Cache-Control': 'no-cache'
+      }
+    });
+
+    if (pageRes.ok) {
+      const html = await pageRes.text();
+
+      // 1. Extract ytInitialPlayerResponse
+      const playerMatch = html.match(/var ytInitialPlayerResponse\s*=\s*({.+?});(?:var|<\/script>)/s) ||
+                          html.match(/ytInitialPlayerResponse\s*=\s*({.+?});/s);
+      
+      let captionTracks: any[] = [];
+      if (playerMatch) {
+        try {
+          const playerData = JSON.parse(playerMatch[1]);
+          if (playerData.videoDetails) {
+            fullDescription = playerData.videoDetails.shortDescription || '';
+            tags = playerData.videoDetails.keywords || [];
+          }
+          if (playerData.captions?.playerCaptionsTracklistRenderer?.captionTracks) {
+            captionTracks = playerData.captions.playerCaptionsTracklistRenderer.captionTracks;
+          }
+        } catch (e) {
+          console.warn(`Error parsing playerResponse for ${videoId}:`, e);
+        }
+      }
+
+      // Fallback for description if not found
+      if (!fullDescription) {
+        const descMatch = html.match(/<meta property="og:description" content="([^"]*)">/) ||
+                          html.match(/<meta name="description" content="([^"]*)">/);
+        if (descMatch) {
+          fullDescription = descMatch[1]
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'");
+        }
+      }
+
+      // 2. Extract chapters from description (e.g. 00:00, 03:20 Title)
+      if (fullDescription) {
+        const lines = fullDescription.split('\n');
+        for (const line of lines) {
+          const timeMatch = line.match(/(?:^|\s)(\d{1,2}:\d{2}(?::\d{2})?)\s*(?:[-–—|:]\s*)?([^\n\r]+)/);
+          if (timeMatch) {
+            const timeStr = timeMatch[1].trim();
+            const chapterTitle = timeMatch[2].trim().replace(/^[-–—|:]\s*/, '');
+            if (chapterTitle && chapterTitle.length > 1 && !chapterTitle.startsWith('http')) {
+              chapters.push({ timestamp: timeStr, title: chapterTitle });
+            }
+          }
+        }
+      }
+
+      // 3. Fetch Subtitles/Transcript from captionTracks
+      if (captionTracks && captionTracks.length > 0) {
+        // Priority: Korean manual > Korean auto (asr) > English > any track
+        let selectedTrack = captionTracks.find((t: any) => t.languageCode === 'ko' && t.kind !== 'asr');
+        if (!selectedTrack) {
+          selectedTrack = captionTracks.find((t: any) => t.languageCode?.startsWith('ko'));
+        }
+        if (!selectedTrack) {
+          selectedTrack = captionTracks.find((t: any) => t.languageCode?.startsWith('en'));
+        }
+        if (!selectedTrack) {
+          selectedTrack = captionTracks[0];
+        }
+
+        if (selectedTrack && selectedTrack.baseUrl) {
+          try {
+            const captionUrl = selectedTrack.baseUrl.includes('fmt=') ? selectedTrack.baseUrl : `${selectedTrack.baseUrl}&fmt=json3`;
+            const captionRes = await fetch(captionUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+              }
+            });
+
+            if (captionRes.ok) {
+              const captionRaw = await captionRes.text();
+              if (captionRaw.startsWith('{')) {
+                const jsonCaptions = JSON.parse(captionRaw);
+                if (jsonCaptions.events) {
+                  const transcriptParts: string[] = [];
+                  for (const ev of jsonCaptions.events) {
+                    if (ev.segs) {
+                      const line = ev.segs.map((s: any) => s.utf8).join('').trim();
+                      if (line && line !== '\n') {
+                        const startSec = Math.floor((ev.tStartMs || 0) / 1000);
+                        const m = Math.floor(startSec / 60);
+                        const s = startSec % 60;
+                        const timeStampStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+                        transcriptParts.push(`[${timeStampStr}] ${line}`);
+                      }
+                    }
+                  }
+                  transcript = transcriptParts.join('\n');
+                }
+              } else if (captionRaw.includes('<text')) {
+                const textMatches = Array.from(captionRaw.matchAll(/<text start="([\d\.]+)"[^>]*>([^<]*)<\/text>/g));
+                const transcriptParts: string[] = [];
+                for (const match of textMatches) {
+                  const startSec = Math.floor(parseFloat(match[1]));
+                  const textContent = match[2]
+                    .replace(/&amp;/g, '&')
+                    .replace(/&lt;/g, '<')
+                    .replace(/&gt;/g, '>')
+                    .replace(/&quot;/g, '"')
+                    .replace(/&#39;/g, "'")
+                    .trim();
+                  if (textContent) {
+                    const m = Math.floor(startSec / 60);
+                    const s = startSec % 60;
+                    const timeStampStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+                    transcriptParts.push(`[${timeStampStr}] ${textContent}`);
+                  }
+                }
+                transcript = transcriptParts.join('\n');
+              }
+            }
+          } catch (capErr) {
+            console.warn(`Caption fetch failed for ${videoId}:`, capErr);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`Failed fetching video details for ${videoId}:`, err);
+  }
+
+  return { fullDescription, transcript, chapters, tags };
+}
+
+// Helper function to summarize video using Gemini AI with rich context and multi-model fallback
 async function summarizeVideoWithGemini(
   videoTitle: string,
   videoDescription: string,
   channelTitle: string,
   category: string,
-  detailLevel: string = 'standard'
-): Promise<{ summary: any; aiPowered: boolean }> {
+  detailLevel: string = 'standard',
+  videoId?: string,
+  existingTranscript?: string,
+  existingFullDesc?: string
+): Promise<{ summary: any; aiPowered: boolean; fullDescription: string; transcript: string }> {
+  // 1. Fetch real video details & transcript if videoId provided and not already provided
+  let fullDesc = existingFullDesc || '';
+  let transcript = existingTranscript || '';
+  let extractedChapters: Array<{ timestamp: string; title: string }> = [];
+
+  if (videoId && (!fullDesc || !transcript)) {
+    const fetched = await fetchYouTubeVideoDetailsAndTranscript(videoId);
+    if (!fullDesc && fetched.fullDescription) fullDesc = fetched.fullDescription;
+    if (!transcript && fetched.transcript) transcript = fetched.transcript;
+    if (fetched.chapters && fetched.chapters.length > 0) extractedChapters = fetched.chapters;
+  }
+
+  const effectiveDescription = fullDesc || videoDescription || '';
+  const chaptersText = extractedChapters.map(c => `${c.timestamp} - ${c.title}`).join('\n');
+
   const ai = getAI();
 
   if (ai) {
+    const isDeep = detailLevel === 'in-depth';
     const prompt = `
-당신은 최고의 유튜브 콘텐츠 전문 분석가 및 지식 큐레이터입니다.
-아래 유튜브 영상의 제목, 설명, 채널 정보를 바탕으로 시청자가 영상을 직접 보지 않고도 모든 핵심 인사이트를 파악할 수 있도록 깊이 있고 체계적인 한국어 요약 보고서를 작성해주세요.
+당신은 대한민국 최고의 리서치 기관 수석 콘텐츠 분석가이자 지식 큐레이터입니다.
+아래 유튜브 영상의 제목, 원본 상세 설명, 챕터 구성, 실제 발화 자막 스크립트를 철저히 심층 분석하여, 영상을 직접 보지 않고도 전문가 수준으로 모든 핵심 논의와 데이터를 파악할 수 있는 **정밀하고 깊이 있는 요약 보고서**를 한국어로 작성해주세요.
 
 [영상 정보]
 - 채널명: ${channelTitle || '미지정'}
 - 영상 제목: ${videoTitle}
-- 기본 카테고리: ${category || 'IT/테크'}
-- 영상 설명: ${videoDescription || '설명 없음'}
-- 요약 상세도: ${detailLevel} (concise: 간결핵심, standard: 표준상세, in-depth: 심층분석)
+- 카테고리: ${category || 'IT/테크'}
+- 요약 상세 모드: ${isDeep ? '심층 정밀 분석 (In-Depth Intelligence)' : '표준 상세 분석 (Standard Comprehensive)'}
 
-[작성 요구사항]
-1. coreTopic: 영상 전체를 관통하는 명확하고 임팩트 있는 핵심 주제 1문장
-2. keyPoints: 영상의 가장 중요한 핵심 논점 및 사실 3~5개를 불릿포인트 문자열 배열로 작성
-3. detailedSummary: 논리적인 기승전결(배경, 핵심 내용, 결론)을 갖춘 3~5개 문장의 상세하고 풍부한 줄거리 요약
-4. timelineSummary: 영상의 흐름을 3~4개 구간(예: 00:00, 05:30 등)으로 나누어 각 구간별 소제목(title)과 핵심 요점(point) 정리
-5. takeaways: 시청자가 얻을 수 있는 실질적인 시사점, 인사이트 또는 액션 플랜 2~3개
-6. keywords: 핵심 검색 키워드 4~6개 (예: ["AI에이전트", "전력인프라", "테크트렌드"])
-7. sentiment: 'positive' | 'neutral' | 'caution' | 'insightful' 중 택1
-8. sentimentLabel: 성향 설명 라벨 (예: "미래 성장 전망 (긍정적)", "시장 변동성 주의", "심층 기술 분석")
-9. category: 적합한 카테고리 분류 ('IT/테크', '경제/재테크', '비즈니스/스타트업', '과학/지식', '뉴스/시사', '자기계발/교육', '라이프/엔터', '기타' 중 택1)
-10. readingTimeMinutes: 요약본을 읽는데 걸리는 예상 시간(분 단위 정수, 2~4)
+[유튜브 원본 상세 설명 & 타임라인]
+${effectiveDescription ? effectiveDescription.slice(0, 5000) : '설명 없음'}
+
+${chaptersText ? `[영상 챕터 정보]\n${chaptersText}\n` : ''}
+
+${transcript ? `[영상 실제 발화 자막/스크립트 (일부/전체)]\n${transcript.slice(0, 30000)}\n` : ''}
+
+[작성 지침 및 금지 사항 (CRITICAL)]
+1. ❌ **절대 금지 표현**: "~에 대한 핵심 동향 및 주요 배경 분석", "~에 대해 심층적인 정보와 통찰을 제시합니다", "~등 다각도의 핵심 쟁점을 체계적으로 다루고 있으며" 와 같은 템플릿 상투구는 절대 쓰지 마세요.
+2. 🎯 **구체적인 실질 정보 필수**: 영상에서 실제로 거론된 인물(출연자, 패널), 기업/기관명, 경제 수치(금리, 지수, 성장률, 환율 등), 핵심 기술 스택, 구체적인 사례 및 논거를 정확히 담아내야 합니다.
+3. 📝 **상세 맥락 요약 (detailedSummary)**:
+   - 본 요약 보고서의 가장 중요한 핵심입니다.
+   - 최소 3~5개의 풍부한 문단으로 구성된 완성형 Markdown 텍스트로 작성하세요.
+   - 구성: 
+     - **1. 논의 배경 및 핵심 문제 제기** (왜 이 논의가 촉발되었는가, 거시적/기술적 맥락)
+     - **2. 주요 주장 및 심층 논거 분석** (출연자/발표자가 제시한 핵심 사실, 데이터, 메커니즘, 쟁점)
+     - **3. 예상 리스크 및 반론 요인** (한계점, 반대 시각, 변동성 요인)
+     - **4. 향후 전망 및 최종 결론** (앞으로의 시장/기술 전개 방향)
+4. 📌 **핵심 요약 포인트 (keyPoints)**:
+   - 4~6개의 불릿포인트. 각 포인트는 단순 제목이 아니라 **'구체적 사실 + 발표자의 핵심 논리 + 그로 인한 파급 효과'**를 담은 1~2개의 명확한 문장으로 작성.
+5. ⏱️ **타임라인별 요약 (timelineSummary)**:
+   - 영상의 주요 4~6개 구간 타임스탬프(timestamp e.g. "00:00", "05:20"), 소제목(title), 그리고 해당 구간에서 발표자가 말한 실제 핵심 논의 요약(point: 2문장 내외).
+6. 💡 **시사점 및 액션 플랜 (takeaways)**:
+   - 시청자/투자자/실무자가 바로 활용할 수 있는 구체적인 행동 지침 3~5개.
+7. 👥 **출연자별 논의 인사이트 (speakerInsights)**:
+   - 토론이나 대담 형태인 경우 각 출연자(예: 김대호, 홍춘욱, 김광석 등)의 입장과 핵심 주장 정리. 단독 방송인 경우 메인 발표자 1명으로 작성.
+8. 💬 **핵심 어록 (keyQuotes)**:
+   - 영상에서 발표자가 강조한 가장 인상 깊은 문장 2~3개.
 `;
 
-    // Try primary and backup models in order
     const candidateModels = ['gemini-3.7-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
 
     for (const modelName of candidateModels) {
@@ -976,18 +1166,18 @@ async function summarizeVideoWithGemini(
           model: modelName,
           contents: prompt,
           config: {
-            systemInstruction: '당신은 대한민국 최고의 유튜브 데이터 분석가입니다. 전문적이고 유익하며 한국어 맞춤법이 완벽한 JSON 포맷으로만 답변하세요.',
+            systemInstruction: '당신은 대한민국 최고 수준의 지식 인텔리전스 수석 리서치 애널리스트입니다. 상투적인 문구를 일절 배제하고 오직 팩트, 구체적 논거, 정밀한 분석을 담은 유효한 JSON 포맷으로만 답변하세요.',
             responseMimeType: 'application/json',
             responseSchema: {
               type: Type.OBJECT,
               properties: {
-                coreTopic: { type: Type.STRING, description: '영상의 핵심 주제 1문장' },
+                coreTopic: { type: Type.STRING, description: '영상의 핵심 테제 및 핵심 주제 1~2문장' },
                 keyPoints: {
                   type: Type.ARRAY,
                   items: { type: Type.STRING },
-                  description: '주요 포인트 3~5개'
+                  description: '구체적인 팩트와 논리를 담은 핵심 요점 4~6개'
                 },
-                detailedSummary: { type: Type.STRING, description: '상세 종합 요약' },
+                detailedSummary: { type: Type.STRING, description: '소제목과 문단을 갖춘 심층 상세 Markdown 요약 (최소 3~5문단)' },
                 timelineSummary: {
                   type: Type.ARRAY,
                   items: {
@@ -999,31 +1189,49 @@ async function summarizeVideoWithGemini(
                     },
                     required: ['timestamp', 'title', 'point']
                   },
-                  description: '타임라인별 핵심 내용'
+                  description: '타임라인별 구체적 내용'
                 },
                 takeaways: {
                   type: Type.ARRAY,
                   items: { type: Type.STRING },
-                  description: '시사점 및 액션 플랜'
+                  description: '실질적인 시사점 및 액션 플랜 3~5개'
+                },
+                speakerInsights: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      speaker: { type: Type.STRING },
+                      stance: { type: Type.STRING },
+                      mainArgument: { type: Type.STRING }
+                    },
+                    required: ['speaker', 'mainArgument']
+                  },
+                  description: '출연자별 입장 및 핵심 주장'
+                },
+                keyQuotes: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: '핵심 어록 및 주요 발언 2~3개'
                 },
                 keywords: {
                   type: Type.ARRAY,
                   items: { type: Type.STRING },
-                  description: '핵심 키워드 4~6개'
+                  description: '전문 핵심 키워드 5~8개'
                 },
                 sentiment: { type: Type.STRING, description: 'positive, neutral, caution, insightful' },
-                sentimentLabel: { type: Type.STRING, description: '성향 라벨' },
+                sentimentLabel: { type: Type.STRING, description: '직관적인 성향 라벨' },
                 category: { type: Type.STRING, description: '추천 카테고리' },
-                readingTimeMinutes: { type: Type.INTEGER, description: '예상 읽기 시간' }
+                readingTimeMinutes: { type: Type.INTEGER, description: '예상 정독 시간(분)' }
               },
               required: ['coreTopic', 'keyPoints', 'detailedSummary', 'takeaways', 'keywords', 'sentiment', 'sentimentLabel', 'category', 'readingTimeMinutes']
             }
           }
         });
 
-        // 12s timeout for each attempt
+        // 18s timeout for high-quality deep analysis
         const timeoutPromise = new Promise<null>((_, reject) =>
-          setTimeout(() => reject(new Error('AI generation timeout')), 12000)
+          setTimeout(() => reject(new Error('AI generation timeout')), 18000)
         );
 
         const response: any = await Promise.race([responsePromise, timeoutPromise]);
@@ -1032,18 +1240,42 @@ async function summarizeVideoWithGemini(
           const cleanedText = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
           const parsed = JSON.parse(cleanedText);
           if (parsed && parsed.coreTopic && Array.isArray(parsed.keyPoints)) {
-            return { summary: parsed, aiPowered: true };
+            return { 
+              summary: {
+                ...parsed,
+                transcriptAvailable: !!transcript
+              }, 
+              aiPowered: true,
+              fullDescription: effectiveDescription,
+              transcript
+            };
           }
         }
       } catch (modelErr: any) {
-        console.warn(`Model ${modelName} failed, trying next:`, modelErr?.message || modelErr);
+        console.warn(`Model ${modelName} attempt failed:`, modelErr?.message || modelErr);
       }
     }
   }
 
-  // Fallback to high-quality smart contextual summary
-  const fallback = generateFallbackSummary(videoTitle, videoDescription, channelTitle, category);
-  return { summary: fallback, aiPowered: false };
+  // Fallback to high-quality smart contextual summary based on real extracted data
+  const fallback = generateFallbackSummary(
+    videoTitle, 
+    effectiveDescription, 
+    channelTitle, 
+    category, 
+    extractedChapters, 
+    transcript
+  );
+
+  return { 
+    summary: {
+      ...fallback,
+      transcriptAvailable: !!transcript
+    }, 
+    aiPowered: false,
+    fullDescription: effectiveDescription,
+    transcript
+  };
 }
 
 // 3.5 Dedicated 24h Video Search & Instant AI Summarization
@@ -1077,9 +1309,9 @@ app.post('/api/youtube/search-24h-videos', async (req, res) => {
     // Sort by publication date descending (newest first)
     collectedVideos.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
 
-    // Auto-summarize recent videos (parallel batch of up to 8 for speed)
+    // Auto-summarize recent videos (parallel batch of up to 6 for speed & precision)
     if (autoSummarize && collectedVideos.length > 0) {
-      const toSummarize = collectedVideos.slice(0, 8);
+      const toSummarize = collectedVideos.slice(0, 6);
       await Promise.allSettled(
         toSummarize.map(async (vid) => {
           try {
@@ -1088,10 +1320,13 @@ app.post('/api/youtube/search-24h-videos', async (req, res) => {
               vid.description,
               vid.channelTitle,
               vid.category,
-              'standard'
+              'standard',
+              vid.videoId
             );
             if (result && result.summary) {
               vid.summary = result.summary;
+              vid.fullDescription = result.fullDescription || vid.description;
+              vid.transcript = result.transcript || '';
               vid.isSummarized = true;
             }
           } catch (sumErr) {
@@ -1117,23 +1352,32 @@ app.post('/api/youtube/search-24h-videos', async (req, res) => {
   }
 });
 
-// 4. Analyze video using Gemini AI
+// 4. Analyze video using Gemini AI with full transcript & description
 app.post('/api/youtube/analyze-video', async (req, res) => {
   try {
-    const { videoTitle, videoDescription, channelTitle, category, detailLevel } = req.body;
+    const { videoId, videoTitle, videoDescription, channelTitle, category, detailLevel, fullDescription, transcript } = req.body;
     if (!videoTitle) {
       return res.status(400).json({ error: 'videoTitle is required' });
     }
 
-    const { summary, aiPowered } = await summarizeVideoWithGemini(
+    const { summary, aiPowered, fullDescription: resolvedDesc, transcript: resolvedTrans } = await summarizeVideoWithGemini(
       videoTitle,
       videoDescription || '',
       channelTitle || '',
       category || 'IT/테크',
-      detailLevel || 'standard'
+      detailLevel || 'standard',
+      videoId,
+      transcript,
+      fullDescription
     );
 
-    return res.json({ success: true, summary, aiPowered });
+    return res.json({ 
+      success: true, 
+      summary, 
+      aiPowered,
+      fullDescription: resolvedDesc,
+      transcript: resolvedTrans
+    });
   } catch (error: any) {
     console.error('Analyze video error:', error);
     const fallback = generateFallbackSummary(
@@ -1143,6 +1387,22 @@ app.post('/api/youtube/analyze-video', async (req, res) => {
       req.body.category || 'IT/테크'
     );
     res.json({ success: true, summary: fallback, aiPowered: false });
+  }
+});
+
+// 4.5 Video Details & Transcript endpoint
+app.post('/api/youtube/video-details', async (req, res) => {
+  try {
+    const { videoId } = req.body;
+    if (!videoId) {
+      return res.status(400).json({ error: 'videoId is required' });
+    }
+
+    const details = await fetchYouTubeVideoDetailsAndTranscript(videoId);
+    res.json({ success: true, ...details });
+  } catch (error: any) {
+    console.error('Video details error:', error);
+    res.status(500).json({ error: error.message || '영상 세부 정보를 불러오지 못했습니다.' });
   }
 });
 
@@ -1176,7 +1436,7 @@ ${JSON.stringify(simplifiedVideos, null, 2)}
 
 [요청 보고서 구조]
 1. title: 보고서 제목 (예: "${dateStr} 전일 유튜브 주요 동향 및 통합 인사이트 리포트")
-2. executiveSummary: 전일 업로드된 콘텐츠 전체의 핵심 흐름과 매크로 시사점을 요약한 3~4문장의 총평
+2. executiveSummary: 전일 업로드된 콘텐츠 전체의 핵심 흐름과 매크로 시사점을 요약한 3~4문단의 총평
 3. topTrends: 가장 두드러진 카테고리별 주요 트렌드 2~4개 (topic, category, description, relatedVideoTitles)
 4. keyTakeaways: 종합적인 핵심 시사점 3~5개
 5. recommendedActions: 개인 및 비즈니스 의사결정자를 위한 실천 권장사항 2~3개
@@ -1249,59 +1509,106 @@ ${JSON.stringify(simplifiedVideos, null, 2)}
   }
 });
 
-// Helper functions for fallback generation with intelligent topic extraction
-function generateFallbackSummary(title: string, desc: string, channel: string, category: string) {
-  // Extract key phrases from title
+// Helper functions for fallback generation with intelligent contextual extraction
+function generateFallbackSummary(
+  title: string, 
+  desc: string = '', 
+  channel: string = '', 
+  category: string = '',
+  chapters: Array<{ timestamp: string; title: string }> = [],
+  transcript: string = ''
+) {
   const cleanTitle = title.replace(/^\[[^\]]+\]\s*/, '').replace(/^【[^】]+】\s*/, '');
+  
+  // Extract meaningful segments from title
   const titleParts = cleanTitle
     .split(/[-–—|:,/·•]/)
     .map(p => p.trim())
-    .filter(p => p.length > 1 && !p.toLowerCase().startsWith('http'));
+    .filter(p => p.length > 1 && !p.toLowerCase().startsWith('http') && !p.includes('구독'));
 
-  const subItems: string[] = [];
-  titleParts.forEach(part => {
-    const commaSplit = part.split(/[,，]/).map(s => s.trim().replace(/등$/, '').trim()).filter(s => s.length > 1);
-    subItems.push(...commaSplit);
-  });
+  // Extract meaningful lines from description
+  const descLines = (desc || '')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 12 && !l.startsWith('http') && !l.includes('인스타그램') && !l.includes('비즈니스 문의') && !l.includes('구독과 좋아요'));
 
-  const extractedTopics = Array.from(new Set(subItems)).slice(0, 5);
+  const speakers: Array<{ speaker: string; stance: string; mainArgument: string }> = [];
+  // Detect speakers if format like 김대호x홍춘욱x김광석
+  const speakerMatch = cleanTitle.match(/([가-힣]{2,4})\s*[xX×및,]\s*([가-힣]{2,4})(?:\s*[xX×및,]\s*([가-힣]{2,4}))?/);
+  if (speakerMatch) {
+    const sp1 = speakerMatch[1];
+    const sp2 = speakerMatch[2];
+    const sp3 = speakerMatch[3];
+    if (sp1) speakers.push({ speaker: sp1, stance: '핵심 패널/전문가', mainArgument: `${cleanTitle}의 핵심 쟁점 및 데이터 근거 제시` });
+    if (sp2) speakers.push({ speaker: sp2, stance: '핵심 패널/전문가', mainArgument: '시장 환경 변화와 리스크 요인 및 파급 효과 분석' });
+    if (sp3) speakers.push({ speaker: sp3, stance: '진행 및 종합 정리', mainArgument: '쟁점 조율 및 향후 정책/시장 방향성 도출' });
+  }
 
+  // Key points based on actual description lines or chapter markers
   let keyPoints: string[] = [];
-  if (extractedTopics.length >= 2) {
-    keyPoints = extractedTopics.map(topic => `${topic}에 대한 핵심 동향 및 주요 배경 분석`);
+  if (chapters && chapters.length >= 3) {
+    keyPoints = chapters.slice(0, 5).map(c => `[${c.timestamp}] ${c.title}: 관련 현안에 대한 집중 논의 및 핵심 쟁점 진단`);
+  } else if (descLines.length >= 3) {
+    keyPoints = descLines.slice(0, 4).map(l => l.length > 120 ? `${l.substring(0, 118)}...` : l);
+  } else if (titleParts.length >= 2) {
+    keyPoints = titleParts.slice(0, 4).map(tp => `${tp}에 대한 실제 현장 데이터와 정책적 배경 및 시장 파급 효과 분석`);
   } else {
     keyPoints = [
-      `${channel || '해당 채널'}에서 집중 조명한 핵심 화두 및 기술/시장 배경 설명`,
-      `실제 사례와 최신 데이터에 기반한 주요 원인 및 파급 효과 분석`,
-      `향후 전개 방향 및 산업/투자자/실무자 관점에서의 실질적 영향 진단`,
-      `관련 기술 및 시장 변화에 대응하기 위한 핵심 고려사항과 대응 전략`
+      `${channel || '해당 채널'}에서 발표한 핵심 거시 지표 및 기술적 변화 요인 분석`,
+      '현업 전문가 및 출연진이 제시한 구체적인 데이터 기반 논거와 시장 해석',
+      '단기 변동성 및 리스크 요인에 대응하기 위한 실전 포트폴리오/전략 가이드',
+      '향후 정책 발표 및 시장 일정에 따른 단계별 파급 효과 전망'
     ];
   }
 
+  const timelineSummary = chapters.length > 0
+    ? chapters.slice(0, 5).map(c => ({
+        timestamp: c.timestamp,
+        title: c.title,
+        point: `${c.title}에 관한 세부 배경 설명 및 주요 발표 내용 요약`
+      }))
+    : [
+        { timestamp: '00:00', title: '주요 논제 및 문제 제기', point: `${titleParts[0] || cleanTitle} 관련 최신 동향 및 핵심 배경 설명` },
+        { timestamp: '05:30', title: '심층 데이터 및 핵심 논거 분석', point: titleParts[1] ? `${titleParts[1]} 관련 심층 분석 및 쟁점 진단` : '시장 데이터 및 실제 사례 검토' },
+        { timestamp: '12:45', title: '시사점 및 종합 결론', point: '향후 전망 및 실전 대응 전략 제시' }
+      ];
+
+  const detailedSummaryMarkdown = `
+### 1. 논의 배경 및 핵심 문제 제기
+본 영상은 '${cleanTitle}'을 핵심 아젠다로 설정하여 ${channel ? `${channel} 채널에서 ` : ''}심층적인 사실관계와 전문적 시각을 다룹니다. ${descLines[0] ? descLines[0] : '최근 시장과 기술 환경의 급격한 변화 속에서 가장 주목받는 이슈를 다각도로 조명하고 있습니다.'}
+
+### 2. 주요 주장 및 심층 분석
+${descLines.length > 1 ? descLines.slice(1, 3).join('\n\n') : `${cleanTitle}에 관련된 구체적인 메커니즘과 현장 데이터를 바탕으로, 단순한 단기 현상을 넘어 구조적인 변화 요인을 집중적으로 분석합니다.`}
+
+### 3. 시장/산업 파급 효과 및 리스크
+관련 분야의 급격한 변동성과 정책적 불확실성에 유의할 필요가 있으며, 각 주체별(투자자, 기업, 실무자)로 선제적인 리스크 관리와 포트폴리오 재점검이 필수적입니다.
+
+### 4. 종합 전망 및 결론
+단기적인 노이즈에 매몰되기보다 본질적인 펀더멘털과 중장기 트렌드에 주목해야 하며, 향후 발표될 후속 지표와 일정에 맞춘 유연한 대응 전략을 권고합니다.
+  `.trim();
+
   const keywords = Array.from(new Set([
     category || 'IT/테크',
-    ...extractedTopics.slice(0, 3),
+    ...titleParts.slice(0, 3),
     channel || '유튜브'
   ])).slice(0, 6);
 
   return {
-    coreTopic: `${cleanTitle}의 핵심 쟁점 분석 및 주요 시사점 요약`,
+    coreTopic: `${cleanTitle}의 핵심 쟁점 심층 분석 및 실전 대응 전략`,
     keyPoints,
-    detailedSummary: `본 영상은 '${cleanTitle}'을 주제로 ${channel ? `${channel} 채널에서 ` : ''}심층적인 정보와 통찰을 제시합니다. ${extractedTopics.length > 0 ? `특히 ${extractedTopics.slice(0, 3).join(', ')} 등 다각도의 핵심 쟁점을 체계적으로 다루고 있으며, ` : ''}관련 분야의 최신 트렌드와 파급 효과, 향후 대응 방안을 논리적으로 정리하고 있습니다.`,
-    timelineSummary: [
-      { timestamp: '00:00', title: '주요 이슈 도입 및 개요', point: '핵심 주제 제시 및 배경 설명' },
-      { timestamp: '05:30', title: '심층 내용 및 주요 쟁점 분석', point: extractedTopics[0] ? `${extractedTopics[0]} 관련 상세 분석` : '데이터 및 현장 사례 검토' },
-      { timestamp: '12:45', title: '시사점 및 종합 결론', point: '향후 전망 및 실전 대응 전략 제시' }
-    ],
+    detailedSummary: detailedSummaryMarkdown,
+    timelineSummary,
     takeaways: [
-      '급변하는 트렌드 속에서 핵심 변화 요인을 선제적으로 파악하고 유연하게 대응할 필요성',
-      '단편적인 정보보다는 생태계 전반의 흐름과 장기적 파급력을 고려한 의사결정 권고'
+      '급변하는 대외 변수 속에서 핵심 변화 요인을 선제적으로 파악하고 리스크 관리 강화',
+      '단편적 뉴스보다 펀더멘털 데이터와 정책적 방향성에 기반한 중장기 의사결정 수립'
     ],
+    speakerInsights: speakers.length > 0 ? speakers : undefined,
+    keyQuotes: descLines[0] ? [descLines[0].substring(0, 80)] : undefined,
     keywords,
     sentiment: 'insightful' as const,
     sentimentLabel: '체계적 심층 분석 (통찰적)',
     category: category || 'IT/테크',
-    readingTimeMinutes: 2
+    readingTimeMinutes: 3
   };
 }
 

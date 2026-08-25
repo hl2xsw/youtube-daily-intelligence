@@ -17,7 +17,7 @@ export interface YouTubeChannel {
 export interface VideoSummary {
   coreTopic: string; // 핵심 주제
   keyPoints: string[]; // 주요 포인트 목록
-  detailedSummary: string; // 상세 요약
+  detailedSummary: string; // 상세 맥락 요약 (Markdown 지원)
   timelineSummary?: { timestamp: string; title: string; point: string }[];
   takeaways: string[]; // 시사점 및 액션 플랜
   keywords: string[]; // 핵심 키워드
@@ -25,6 +25,10 @@ export interface VideoSummary {
   sentimentLabel: string;
   targetAudience?: string;
   readingTimeMinutes: number;
+  speakerInsights?: { speaker: string; stance?: string; mainArgument: string }[];
+  discussionHighlights?: string[];
+  keyQuotes?: string[];
+  transcriptAvailable?: boolean;
 }
 
 export interface YouTubeVideo {
@@ -35,6 +39,8 @@ export interface YouTubeVideo {
   channelThumbnail?: string;
   title: string;
   description: string;
+  fullDescription?: string;
+  transcript?: string;
   thumbnailUrl: string;
   publishedAt: string; // ISO string
   duration?: string;

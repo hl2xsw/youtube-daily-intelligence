@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { YouTubeVideo, VideoCategory } from '../types';
 import { 
   X, 
@@ -13,11 +14,15 @@ import {
   Clock, 
   Calendar, 
   Bookmark, 
-  Share2,
   Tag,
   Lightbulb,
   CheckCircle2,
-  Tv2
+  Tv2,
+  Users,
+  Quote,
+  Subtitles,
+  Flame,
+  Layers
 } from 'lucide-react';
 import { 
   generateVideoMarkdown, 
@@ -32,7 +37,7 @@ interface VideoDetailModalProps {
   categories?: string[];
   onClose: () => void;
   onToggleBookmark: (videoId: string) => void;
-  onReanalyze: (video: YouTubeVideo) => void;
+  onReanalyze: (video: YouTubeVideo, overrideDetailLevel?: 'concise' | 'standard' | 'in-depth') => void;
   onChangeCategory: (videoId: string, newCategory: VideoCategory) => void;
   isAnalyzing?: boolean;
 }
@@ -59,12 +64,13 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
 }) => {
   const { showToast } = useToast();
   const [copied, setCopied] = useState(false);
-  const [activeSubTab, setActiveSubTab] = useState<'summary' | 'timeline' | 'takeaways' | 'original'>('summary');
+  const [activeSubTab, setActiveSubTab] = useState<'summary' | 'timeline' | 'speakers' | 'takeaways' | 'transcript' | 'original'>('summary');
+  const [selectedDetailLevel, setSelectedDetailLevel] = useState<'standard' | 'in-depth'>('standard');
 
   // Automatically trigger AI analysis if video summary is missing
   React.useEffect(() => {
     if (video && !video.summary && !isAnalyzing) {
-      onReanalyze(video);
+      onReanalyze(video, selectedDetailLevel);
     }
   }, [video?.id]);
 
@@ -109,8 +115,8 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6">
-      <div className="bg-white w-full max-w-3xl rounded-xl shadow-xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 md:p-6">
+      <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]">
         {/* Modal Top Header */}
         <div className="p-4 sm:p-5 pb-3.5 border-b border-slate-200 flex items-start justify-between gap-3 bg-white">
           <div className="flex items-start gap-3 min-w-0">
@@ -119,16 +125,16 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                 src={video.channelThumbnail} 
                 alt={video.channelTitle}
                 referrerPolicy="no-referrer"
-                className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0 mt-0.5" 
+                className="w-11 h-11 rounded-full object-cover border border-slate-200 shrink-0 mt-0.5" 
               />
             ) : (
-              <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-sm shrink-0 mt-0.5">
+              <div className="w-11 h-11 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-sm shrink-0 mt-0.5">
                 {video.channelTitle.charAt(0)}
               </div>
             )}
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                <span className="text-xs font-semibold text-slate-700">{video.channelTitle}</span>
+                <span className="text-xs font-bold text-slate-800">{video.channelTitle}</span>
                 {video.relativeTimeText && (
                   <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200/80">
                     {video.relativeTimeText}
@@ -138,14 +144,20 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                 <select
                   value={video.category}
                   onChange={(e) => onChangeCategory(video.id, e.target.value as VideoCategory)}
-                  className="px-1.5 py-0.5 text-xs font-medium rounded-md border border-slate-200 bg-slate-50 text-slate-700 cursor-pointer hover:border-slate-300"
+                  className="px-2 py-0.5 text-xs font-semibold rounded-md border border-slate-200 bg-slate-50 text-slate-700 cursor-pointer hover:border-slate-300"
                 >
                   {categories.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
                 </select>
+                {video.transcript && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                    <Subtitles className="w-3 h-3 text-emerald-600" />
+                    자막 스크립트 확보
+                  </span>
+                )}
               </div>
-              <h2 className="text-sm sm:text-base font-bold text-slate-900 leading-snug">
+              <h2 className="text-sm sm:text-base md:text-lg font-bold text-slate-900 leading-snug">
                 {video.title}
               </h2>
               <div className="flex items-center gap-2.5 text-xs text-slate-500 mt-1 flex-wrap">
@@ -160,20 +172,25 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                   </span>
                 )}
                 {s && (
-                  <span className="px-1.5 py-0.2 bg-slate-100 rounded text-slate-600 font-medium text-[10px]">
+                  <span className="px-2 py-0.5 bg-slate-100 rounded-md text-slate-700 font-semibold text-[11px] border border-slate-200/60">
                     {s.sentimentLabel}
+                  </span>
+                )}
+                {s?.readingTimeMinutes && (
+                  <span className="text-[11px] text-slate-400">
+                    예상 정독 {s.readingTimeMinutes}분
                   </span>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Close & Action buttons */}
-          <div className="flex items-center gap-1 shrink-0">
+          {/* Close & Bookmark buttons */}
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               onClick={() => onToggleBookmark(video.id)}
-              className={`p-1.5 rounded-lg border border-slate-200 transition-colors ${
-                video.isBookmarked ? 'bg-amber-50 text-amber-500' : 'text-slate-400 hover:text-slate-600'
+              className={`p-2 rounded-lg border border-slate-200 transition-colors ${
+                video.isBookmarked ? 'bg-amber-50 text-amber-500 border-amber-300' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
               }`}
               title="북마크 토글"
             >
@@ -181,7 +198,7 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+              className="p-2 rounded-lg border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
               aria-label="닫기"
             >
               <X className="w-4 h-4" />
@@ -189,170 +206,245 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
           </div>
         </div>
 
-        {/* Action Bar for Documents Export */}
-        <div className="px-4 sm:px-5 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 flex-wrap">
+        {/* Action Bar for Documents Export & Deep AI Re-analyze */}
+        <div className="px-4 sm:px-5 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2.5 flex-wrap">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-xs font-semibold text-slate-600 flex items-center gap-1 mr-1">
-              <Download className="w-3 h-3 text-slate-700" />
-              문서 저장:
+            <span className="text-xs font-bold text-slate-700 flex items-center gap-1 mr-1">
+              <Download className="w-3 h-3 text-slate-600" />
+              내보내기:
             </span>
             <button
               onClick={() => handleDownload('markdown')}
-              className="px-2 py-1 text-xs font-medium bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-md shadow-2xs transition-colors flex items-center gap-1"
+              className="px-2 py-1 text-xs font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-md shadow-2xs transition-colors flex items-center gap-1"
             >
-              <FileCode className="w-3 h-3 text-slate-500" />
-              .md
+              <FileCode className="w-3 h-3 text-blue-600" />
+              Markdown
             </button>
             <button
               onClick={() => handleDownload('txt')}
-              className="px-2 py-1 text-xs font-medium bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-md shadow-2xs transition-colors flex items-center gap-1"
+              className="px-2 py-1 text-xs font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-md shadow-2xs transition-colors flex items-center gap-1"
             >
-              <FileType className="w-3 h-3 text-slate-500" />
-              .txt
+              <FileType className="w-3 h-3 text-slate-600" />
+              Text
             </button>
             <button
               onClick={() => handleDownload('doc')}
-              className="px-2 py-1 text-xs font-medium bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-md shadow-2xs transition-colors flex items-center gap-1"
+              className="px-2 py-1 text-xs font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-md shadow-2xs transition-colors flex items-center gap-1"
             >
-              <FileText className="w-3 h-3 text-slate-500" />
-              .doc
+              <FileText className="w-3 h-3 text-indigo-600" />
+              Word (.doc)
             </button>
             <button
               onClick={handleCopy}
-              className="px-2 py-1 text-xs font-medium bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-md shadow-2xs transition-colors flex items-center gap-1"
+              className="px-2.5 py-1 text-xs font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-md shadow-2xs transition-colors flex items-center gap-1"
             >
               {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-slate-400" />}
               {copied ? '복사됨' : '복사'}
             </button>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Analysis Mode Toggle */}
+            <div className="flex items-center bg-slate-200/80 p-0.5 rounded-lg border border-slate-200 text-xs">
+              <button
+                onClick={() => setSelectedDetailLevel('standard')}
+                className={`px-2 py-0.5 rounded-md font-medium transition-all ${
+                  selectedDetailLevel === 'standard'
+                    ? 'bg-white text-slate-900 shadow-2xs font-semibold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                표준 요약
+              </button>
+              <button
+                onClick={() => setSelectedDetailLevel('in-depth')}
+                className={`px-2 py-0.5 rounded-md font-medium transition-all flex items-center gap-1 ${
+                  selectedDetailLevel === 'in-depth'
+                    ? 'bg-purple-600 text-white shadow-2xs font-semibold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Flame className="w-3 h-3" />
+                심층 정밀 분석
+              </button>
+            </div>
+
             <button
-              onClick={() => onReanalyze(video)}
+              onClick={() => onReanalyze(video, selectedDetailLevel)}
               disabled={isAnalyzing}
-              className="px-2.5 py-1 text-xs font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 rounded-md transition-colors flex items-center gap-1 disabled:opacity-50"
+              className="px-3 py-1 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-md shadow-2xs transition-colors flex items-center gap-1.5 disabled:opacity-50"
             >
-              <Sparkles className={`w-3 h-3 ${isAnalyzing ? 'animate-spin text-slate-800' : 'text-slate-500'}`} />
-              {isAnalyzing ? '분석 중...' : 'AI 재분석'}
+              <Sparkles className={`w-3 h-3 ${isAnalyzing ? 'animate-spin text-amber-400' : 'text-amber-400'}`} />
+              {isAnalyzing ? '분석 중...' : selectedDetailLevel === 'in-depth' ? '심층 AI 분석' : 'AI 재분석'}
             </button>
 
             <a
               href={video.videoUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 rounded-md transition-colors flex items-center gap-1"
+              className="px-2.5 py-1 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 rounded-md transition-colors flex items-center gap-1"
             >
-              <Tv2 className="w-3 h-3 text-slate-500" />
-              유튜브
+              <Tv2 className="w-3.5 h-3.5 text-red-500" />
+              유튜브 바로가기
               <ExternalLink className="w-2.5 h-2.5 text-slate-400" />
             </a>
           </div>
         </div>
 
         {/* Modal Navigation Subtabs */}
-        <div className="flex border-b border-slate-200 px-4 sm:px-5 gap-2 bg-white">
+        <div className="flex border-b border-slate-200 px-4 sm:px-5 gap-1 sm:gap-2 bg-white overflow-x-auto">
           <button
             onClick={() => setActiveSubTab('summary')}
-            className={`py-2 px-2.5 text-xs font-semibold border-b-2 transition-colors ${
+            className={`py-2.5 px-2.5 text-xs font-bold border-b-2 whitespace-nowrap transition-colors flex items-center gap-1.5 ${
               activeSubTab === 'summary'
                 ? 'border-slate-900 text-slate-900'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            핵심 요약 & 포인트
+            <Layers className="w-3.5 h-3.5" />
+            핵심 요약 & 상세 맥락
           </button>
           {s?.timelineSummary && s.timelineSummary.length > 0 && (
             <button
               onClick={() => setActiveSubTab('timeline')}
-              className={`py-2 px-2.5 text-xs font-semibold border-b-2 transition-colors ${
+              className={`py-2.5 px-2.5 text-xs font-bold border-b-2 whitespace-nowrap transition-colors flex items-center gap-1.5 ${
                 activeSubTab === 'timeline'
                   ? 'border-slate-900 text-slate-900'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
             >
-              타임라인 요약
+              <Clock className="w-3.5 h-3.5" />
+              타임라인 흐름 ({s.timelineSummary.length})
+            </button>
+          )}
+          {s?.speakerInsights && s.speakerInsights.length > 0 && (
+            <button
+              onClick={() => setActiveSubTab('speakers')}
+              className={`py-2.5 px-2.5 text-xs font-bold border-b-2 whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+                activeSubTab === 'speakers'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              출연진/논의 쟁점 ({s.speakerInsights.length})
             </button>
           )}
           {s?.takeaways && s.takeaways.length > 0 && (
             <button
               onClick={() => setActiveSubTab('takeaways')}
-              className={`py-2 px-2.5 text-xs font-semibold border-b-2 transition-colors ${
+              className={`py-2.5 px-2.5 text-xs font-bold border-b-2 whitespace-nowrap transition-colors flex items-center gap-1.5 ${
                 activeSubTab === 'takeaways'
                   ? 'border-slate-900 text-slate-900'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
             >
-              시사점 및 인사이트
+              <Lightbulb className="w-3.5 h-3.5" />
+              실전 시사점 ({s.takeaways.length})
+            </button>
+          )}
+          {video.transcript && (
+            <button
+              onClick={() => setActiveSubTab('transcript')}
+              className={`py-2.5 px-2.5 text-xs font-bold border-b-2 whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+                activeSubTab === 'transcript'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Subtitles className="w-3.5 h-3.5 text-emerald-600" />
+              자막 스크립트 전문
             </button>
           )}
           <button
             onClick={() => setActiveSubTab('original')}
-            className={`py-2 px-2.5 text-xs font-semibold border-b-2 transition-colors ${
+            className={`py-2.5 px-2.5 text-xs font-bold border-b-2 whitespace-nowrap transition-colors flex items-center gap-1.5 ${
               activeSubTab === 'original'
                 ? 'border-slate-900 text-slate-900'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            원본 설명 및 키워드
+            <FileText className="w-3.5 h-3.5" />
+            원본 설명 & 키워드
           </button>
         </div>
 
         {/* Modal Scrollable Body */}
-        <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-5 flex-1">
           {activeSubTab === 'summary' && (
-            <div className="space-y-4">
+            <div className="space-y-5">
               {!s ? (
-                <div className="p-6 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-3">
-                  <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
-                    <Sparkles className={`w-5 h-5 ${isAnalyzing ? 'animate-spin text-blue-600' : ''}`} />
+                <div className="p-8 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
+                    <Sparkles className={`w-6 h-6 ${isAnalyzing ? 'animate-spin text-blue-600' : ''}`} />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900">
-                      {isAnalyzing ? 'Gemini AI가 영상 핵심 요약을 분석 및 생성하고 있습니다...' : 'AI 핵심 요약이 준비되지 않았습니다'}
+                    <h3 className="text-base font-bold text-slate-900">
+                      {isAnalyzing ? 'Gemini 3.7 AI가 영상 발화 내용과 자막을 정밀 분석하고 있습니다...' : '영상 상세 분석 및 요약이 준비되지 않았습니다'}
                     </h3>
-                    <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                      영상 제목과 설명을 심층 분석하여 핵심 주제, 주요 포인트, 상세 줄거리, 시사점을 자동 정리합니다.
+                    <p className="text-xs text-slate-500 mt-1.5 max-w-md mx-auto leading-relaxed">
+                      영상 제목, 원본 설명, 타임라인 챕터 및 음성 자막 스크립트를 종합 분석하여 실제 발표자가 논의한 핵심 쟁점, 데이터, 근거, 결론을 상세 보고서로 제공합니다.
                     </p>
                   </div>
                   {!isAnalyzing && (
                     <button
-                      onClick={() => onReanalyze(video)}
-                      className="px-4 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-2xs inline-flex items-center gap-1.5"
+                      onClick={() => onReanalyze(video, selectedDetailLevel)}
+                      className="px-5 py-2.5 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-sm inline-flex items-center gap-2 mt-2"
                     >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                      <span>지금 Gemini AI로 핵심 요약 생성하기</span>
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <span>지금 Gemini AI로 정밀 심층 분석 생성하기</span>
                     </button>
                   )}
                 </div>
               ) : (
                 <>
-                  {/* Core Topic Box */}
-                  <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 mb-1">
+                  {/* Core Topic Card */}
+                  <div className="p-4 sm:p-5 rounded-xl bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-sm">
+                    <div className="flex items-center gap-2 text-xs font-bold text-amber-300 mb-1.5">
                       <span>🎯</span>
-                      <span>핵심 주제 (Core Topic)</span>
+                      <span>핵심 논제 및 테제 (Core Thesis)</span>
                     </div>
-                    <p className="text-xs sm:text-sm font-semibold text-slate-900 leading-relaxed">
+                    <p className="text-sm sm:text-base font-bold text-slate-50 leading-relaxed">
                       {s.coreTopic}
                     </p>
                   </div>
 
+                  {/* Key Quotes if available */}
+                  {s.keyQuotes && s.keyQuotes.length > 0 && (
+                    <div className="p-3.5 rounded-xl bg-amber-50/60 border border-amber-200/80">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900 mb-2">
+                        <Quote className="w-3.5 h-3.5 text-amber-600" />
+                        <span>영상 핵심 어록 & 주요 발언</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {s.keyQuotes.map((q, idx) => (
+                          <p key={idx} className="text-xs text-amber-950 font-medium italic leading-relaxed pl-2 border-l-2 border-amber-400">
+                            "{q}"
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Key Points */}
                   <div>
-                    <h3 className="text-xs font-bold text-slate-900 mb-2 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-slate-700" />
-                      핵심 요약 포인트 (Key Points)
-                    </h3>
-                    <div className="grid gap-1.5">
+                    <div className="flex items-center justify-between mb-2.5">
+                      <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-slate-800" />
+                        핵심 요약 포인트 (Key Arguments & Facts)
+                      </h3>
+                      <span className="text-[11px] text-slate-500 font-semibold">{s.keyPoints.length}개 핵심 논점</span>
+                    </div>
+                    <div className="grid gap-2">
                       {s.keyPoints.map((point, index) => (
                         <div 
                           key={index}
-                          className="p-2.5 rounded-lg bg-slate-50/70 border border-slate-200/80 flex items-start gap-2.5"
+                          className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 flex items-start gap-3 hover:bg-slate-100/60 transition-colors"
                         >
-                          <span className="w-4 h-4 rounded bg-slate-900 text-white font-semibold text-[10px] flex items-center justify-center shrink-0 mt-0.5">
+                          <span className="w-5 h-5 rounded-md bg-slate-900 text-white font-bold text-xs flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
                             {index + 1}
                           </span>
-                          <p className="text-xs text-slate-800 font-normal leading-relaxed">
+                          <p className="text-xs sm:text-sm text-slate-800 font-medium leading-relaxed">
                             {point}
                           </p>
                         </div>
@@ -360,14 +452,39 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Detailed Summary */}
+                  {/* Detailed Summary (Rendered via ReactMarkdown for rich structured reading) */}
                   <div>
-                    <h3 className="text-xs font-bold text-slate-900 mb-1.5 flex items-center gap-1.5">
-                      <FileText className="w-3.5 h-3.5 text-slate-700" />
-                      상세 맥락 요약
-                    </h3>
-                    <div className="p-3.5 rounded-lg bg-white border border-slate-200 text-xs text-slate-700 leading-relaxed space-y-1.5">
-                      {s.detailedSummary}
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                        <FileText className="w-4 h-4 text-slate-800" />
+                        상세 맥락 요약 (In-Depth Context & Analysis)
+                      </h3>
+                      <span className="text-[11px] text-slate-500 font-medium">배경 • 핵심 논거 • 리스크 • 전망</span>
+                    </div>
+                    <div className="p-4 sm:p-5 rounded-xl bg-white border border-slate-200 text-xs sm:text-sm text-slate-700 leading-relaxed shadow-2xs">
+                      <div className="prose prose-slate max-w-none text-xs sm:text-sm space-y-3">
+                        <ReactMarkdown
+                          components={{
+                            h3: ({ node, ...props }) => (
+                              <h4 className="text-xs sm:text-sm font-bold text-slate-900 mt-4 mb-1.5 pb-1 border-b border-slate-100 flex items-center gap-1.5" {...props} />
+                            ),
+                            p: ({ node, ...props }) => (
+                              <p className="text-xs sm:text-sm text-slate-700 leading-relaxed mb-2" {...props} />
+                            ),
+                            ul: ({ node, ...props }) => (
+                              <ul className="list-disc pl-4 space-y-1 my-2" {...props} />
+                            ),
+                            li: ({ node, ...props }) => (
+                              <li className="text-xs sm:text-sm text-slate-700" {...props} />
+                            ),
+                            strong: ({ node, ...props }) => (
+                              <strong className="font-bold text-slate-900" {...props} />
+                            )
+                          }}
+                        >
+                          {s.detailedSummary}
+                        </ReactMarkdown>
+                      </div>
                     </div>
                   </div>
                 </>
@@ -376,20 +493,30 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
           )}
 
           {activeSubTab === 'timeline' && s?.timelineSummary && (
-            <div className="space-y-2.5">
-              <h3 className="text-xs font-bold text-slate-900 mb-2 flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-slate-700" />
-                영상 진행 흐름별 주요 내용 요약
-              </h3>
-              <div className="space-y-2">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-slate-800" />
+                  타임라인별 핵심 내용 및 논의 진행 흐름
+                </h3>
+                <span className="text-xs text-slate-500 font-semibold">{s.timelineSummary.length}개 구간</span>
+              </div>
+              <div className="space-y-2.5">
                 {s.timelineSummary.map((t, idx) => (
-                  <div key={idx} className="p-3 rounded-lg bg-slate-50/70 border border-slate-200/80 flex items-start gap-2.5">
-                    <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-800 font-mono text-[11px] font-semibold shrink-0">
+                  <div key={idx} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 flex items-start gap-3">
+                    <a
+                      href={`${video.videoUrl}&t=${t.timestamp.replace(':', 'm')}s`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1 rounded-md bg-slate-900 hover:bg-blue-700 text-white font-mono text-xs font-bold shrink-0 transition-colors flex items-center gap-1"
+                      title="해당 시간으로 유튜브 재생"
+                    >
+                      <Tv2 className="w-3 h-3 text-amber-300" />
                       {t.timestamp}
-                    </span>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900 mb-0.5">{t.title}</h4>
-                      <p className="text-xs text-slate-600 leading-relaxed">{t.point}</p>
+                    </a>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-xs sm:text-sm font-bold text-slate-900 mb-1">{t.title}</h4>
+                      <p className="text-xs sm:text-sm text-slate-700 leading-relaxed">{t.point}</p>
                     </div>
                   </div>
                 ))}
@@ -397,35 +524,91 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
             </div>
           )}
 
-          {activeSubTab === 'takeaways' && s?.takeaways && (
-            <div className="space-y-2.5">
-              <h3 className="text-xs font-bold text-slate-900 mb-2 flex items-center gap-1.5">
-                <Lightbulb className="w-3.5 h-3.5 text-slate-700" />
-                시사점 및 실행 포인트
-              </h3>
-              <div className="space-y-2">
-                {s.takeaways.map((item, idx) => (
-                  <div key={idx} className="p-3 rounded-lg bg-slate-50/70 border border-slate-200/80 flex items-start gap-2.5">
-                    <span className="text-slate-600 font-bold text-xs mt-0.5">💡</span>
-                    <p className="text-xs text-slate-800 leading-relaxed">{item}</p>
+          {activeSubTab === 'speakers' && s?.speakerInsights && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                  <Users className="w-4 h-4 text-slate-800" />
+                  출연진별 입장 및 핵심 논거
+                </h3>
+                <span className="text-xs text-slate-500 font-semibold">{s.speakerInsights.length}명 패널</span>
+              </div>
+              <div className="grid gap-3">
+                {s.speakerInsights.map((sp, idx) => (
+                  <div key={idx} className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs">
+                          {sp.speaker.charAt(0)}
+                        </div>
+                        <span className="text-xs sm:text-sm font-bold text-slate-900">{sp.speaker}</span>
+                      </div>
+                      {sp.stance && (
+                        <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-md text-[11px] font-semibold">
+                          {sp.stance}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs sm:text-sm text-slate-700 leading-relaxed bg-white p-3 rounded-lg border border-slate-200/80">
+                      {sp.mainArgument}
+                    </p>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {activeSubTab === 'original' && (
+          {activeSubTab === 'takeaways' && s?.takeaways && (
             <div className="space-y-3">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                  <Lightbulb className="w-4 h-4 text-slate-800" />
+                  실무 및 투자 관점 실천 액션 플랜 (Key Takeaways)
+                </h3>
+                <span className="text-xs text-slate-500 font-semibold">{s.takeaways.length}개 시사점</span>
+              </div>
+              <div className="space-y-2.5">
+                {s.takeaways.map((item, idx) => (
+                  <div key={idx} className="p-4 rounded-xl bg-slate-50 border border-slate-200/90 flex items-start gap-3">
+                    <span className="w-6 h-6 rounded-full bg-amber-100 text-amber-700 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                      💡
+                    </span>
+                    <p className="text-xs sm:text-sm text-slate-800 font-medium leading-relaxed">
+                      {item}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeSubTab === 'transcript' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                  <Subtitles className="w-4 h-4 text-emerald-600" />
+                  유튜브 실제 발화 자막 스크립트 (Full Transcript)
+                </h3>
+                <span className="text-xs text-slate-500 font-medium">타임스탬프 포함 자막</span>
+              </div>
+              <div className="p-4 rounded-xl bg-slate-900 text-slate-100 text-xs font-mono max-h-96 overflow-y-auto leading-relaxed whitespace-pre-wrap border border-slate-800">
+                {video.transcript || '자막 스크립트를 불러오는 중입니다...'}
+              </div>
+            </div>
+          )}
+
+          {activeSubTab === 'original' && (
+            <div className="space-y-4">
               {/* Keywords */}
               {s?.keywords && s.keywords.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1">
-                    <Tag className="w-3 h-3 text-slate-500" />
-                    추출 키워드
+                  <h4 className="text-xs font-bold text-slate-800 mb-2 flex items-center gap-1">
+                    <Tag className="w-3.5 h-3.5 text-slate-600" />
+                    추출 핵심 키워드
                   </h4>
                   <div className="flex flex-wrap gap-1.5">
                     {s.keywords.map((k, i) => (
-                      <span key={i} className="px-2 py-0.5 bg-slate-50 text-slate-700 rounded-md text-xs font-medium border border-slate-200">
+                      <span key={i} className="px-2.5 py-1 bg-slate-100 text-slate-800 rounded-lg text-xs font-semibold border border-slate-200">
                         #{k}
                       </span>
                     ))}
@@ -433,11 +616,17 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                 </div>
               )}
 
-              {/* Original Description */}
+              {/* Original Full Description */}
               <div>
-                <h4 className="text-xs font-bold text-slate-700 mb-1.5">유튜브 원본 설명 텍스트</h4>
-                <div className="p-3 rounded-lg bg-slate-50/70 border border-slate-200 text-xs text-slate-600 whitespace-pre-line max-h-56 overflow-y-auto leading-relaxed">
-                  {video.description || '영상 설명이 없습니다.'}
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                    <FileText className="w-3.5 h-3.5 text-slate-600" />
+                    유튜브 원본 상세 설명 텍스트
+                  </h4>
+                  <span className="text-[11px] text-slate-400">YouTube 원본 설명문</span>
+                </div>
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 whitespace-pre-line max-h-72 overflow-y-auto leading-relaxed font-sans">
+                  {video.fullDescription || video.description || '영상 설명이 없습니다.'}
                 </div>
               </div>
             </div>
@@ -445,11 +634,18 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
         </div>
 
         {/* Modal Bottom Footer */}
-        <div className="p-3 sm:p-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
-          <span className="font-mono text-[11px]">ID: {video.videoId}</span>
+        <div className="p-3 sm:p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[11px] text-slate-400">ID: {video.videoId}</span>
+            {s?.sentiment && (
+              <span className="text-[11px] text-slate-500 font-medium">
+                • 성향: <strong className="text-slate-700">{s.sentimentLabel}</strong>
+              </span>
+            )}
+          </div>
           <button
             onClick={onClose}
-            className="px-3.5 py-1 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-md shadow-2xs"
+            className="px-4 py-1.5 text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg shadow-2xs transition-colors"
           >
             닫기
           </button>

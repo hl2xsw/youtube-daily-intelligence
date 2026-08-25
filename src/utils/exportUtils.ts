@@ -43,6 +43,21 @@ export function generateVideoMarkdown(video: YouTubeVideo): string {
     md += `## 📝 상세 요약 (Detailed Summary)\n`;
     md += `${s.detailedSummary}\n\n`;
 
+    if (s.keyQuotes && s.keyQuotes.length > 0) {
+      md += `## 💬 영상 핵심 어록 & 주요 발언\n`;
+      s.keyQuotes.forEach((q) => {
+        md += `> "${q}"\n\n`;
+      });
+    }
+
+    if (s.speakerInsights && s.speakerInsights.length > 0) {
+      md += `## 👥 출연진/패널별 핵심 논거\n`;
+      s.speakerInsights.forEach((sp) => {
+        md += `- **${sp.speaker}** (${sp.stance}): ${sp.mainArgument}\n`;
+      });
+      md += `\n`;
+    }
+
     if (s.timelineSummary && s.timelineSummary.length > 0) {
       md += `## ⏱️ 타임라인별 주요 내용\n`;
       s.timelineSummary.forEach((t) => {
@@ -106,6 +121,22 @@ export function generateVideoText(video: YouTubeVideo): string {
 
     txt += `[3] 상세 요약\n`;
     txt += `  ${s.detailedSummary}\n\n`;
+
+    if (s.keyQuotes && s.keyQuotes.length > 0) {
+      txt += `[3-1] 주요 발언 & 어록\n`;
+      s.keyQuotes.forEach((q) => {
+        txt += `  - "${q}"\n`;
+      });
+      txt += `\n`;
+    }
+
+    if (s.speakerInsights && s.speakerInsights.length > 0) {
+      txt += `[3-2] 출연진/패널별 핵심 논거\n`;
+      s.speakerInsights.forEach((sp) => {
+        txt += `  - ${sp.speaker} (${sp.stance}): ${sp.mainArgument}\n`;
+      });
+      txt += `\n`;
+    }
 
     if (s.timelineSummary && s.timelineSummary.length > 0) {
       txt += `[4] 타임라인별 요약\n`;
@@ -181,7 +212,21 @@ export function generateVideoWordDoc(video: YouTubeVideo): string {
       </ol>
 
       <h2>📝 상세 요약 (Detailed Summary)</h2>
-      <p style="font-size: 13.5px;">${escapeHtml(s.detailedSummary)}</p>
+      <p style="font-size: 13.5px; white-space: pre-line;">${escapeHtml(s.detailedSummary)}</p>
+
+      ${s.keyQuotes && s.keyQuotes.length > 0 ? `
+        <h2>💬 영상 핵심 어록 & 주요 발언</h2>
+        <ul style="background-color: #fffbeb; border: 1px solid #fef3c7; padding: 10px 24px; border-radius: 6px;">
+          ${s.keyQuotes.map(q => `<li style="color: #92400e; font-style: italic;">"${escapeHtml(q)}"</li>`).join('')}
+        </ul>
+      ` : ''}
+
+      ${s.speakerInsights && s.speakerInsights.length > 0 ? `
+        <h2>👥 출연진/패널별 핵심 논거</h2>
+        <ul>
+          ${s.speakerInsights.map(sp => `<li><b>${escapeHtml(sp.speaker)}</b> (${escapeHtml(sp.stance)}): ${escapeHtml(sp.mainArgument)}</li>`).join('')}
+        </ul>
+      ` : ''}
 
       ${s.timelineSummary && s.timelineSummary.length > 0 ? `
         <h2>⏱️ 타임라인별 요약</h2>
