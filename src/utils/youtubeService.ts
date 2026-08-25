@@ -161,16 +161,22 @@ export function getYouTubeChannelUrl(channel: { channelId?: string; handle?: str
 
 // Fetch Channel Videos via RSS (with server API + client CORS proxy fallbacks)
 export async function fetchRealChannelVideos(channel: YouTubeChannel): Promise<YouTubeVideo[]> {
+  const nowTs = Date.now();
   // 1. Try server-side proxy API if running in fullstack mode
   try {
-    const res = await fetch('/api/youtube/fetch-rss', {
+    const res = await fetch(`/api/youtube/fetch-rss?_t=${nowTs}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
+      },
       body: JSON.stringify({
         channelId: channel.channelId,
         channelTitle: channel.title,
         handle: channel.handle,
-        category: channel.category
+        category: channel.category,
+        thumbnailUrl: channel.thumbnailUrl
       })
     });
 
@@ -178,12 +184,13 @@ export async function fetchRealChannelVideos(channel: YouTubeChannel): Promise<Y
       const data = await res.json();
       if (data.success && Array.isArray(data.videos) && data.videos.length > 0) {
         return data.videos.map((v: any) => {
-          const timeStatus = calculateVideoTimeStatus(v.publishedAt);
+          const timeStatus = calculateVideoTimeStatus(v.publishedAt, nowTs);
           return {
             ...v,
+            channelId: channel.channelId,
             channelTitle: channel.title,
             channelThumbnail: channel.thumbnailUrl || v.channelThumbnail,
-            category: channel.category,
+            category: channel.category || v.category || '기타',
             isYesterday: timeStatus.isYesterday,
             isWithin24h: timeStatus.isWithin24h,
             isToday: timeStatus.isToday,
@@ -198,7 +205,7 @@ export async function fetchRealChannelVideos(channel: YouTubeChannel): Promise<Y
 
   // 2. If valid UC channel ID, try Client-side CORS proxy fallback (for static GitHub Pages hosting)
   if (channel.channelId && channel.channelId.startsWith('UC') && !channel.channelId.startsWith('UC_')) {
-    const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channel.channelId)}`;
+    const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channel.channelId)}&_t=${nowTs}`;
     const proxyUrls = [
       `https://api.allorigins.win/raw?url=${encodeURIComponent(rssUrl)}`,
       `https://corsproxy.io/?${encodeURIComponent(rssUrl)}`
@@ -206,7 +213,9 @@ export async function fetchRealChannelVideos(channel: YouTubeChannel): Promise<Y
 
     for (const proxyUrl of proxyUrls) {
       try {
-        const response = await fetch(proxyUrl);
+        const response = await fetch(proxyUrl, {
+          headers: { 'Cache-Control': 'no-cache, no-store' }
+        });
         if (response.ok) {
           const text = await response.text();
           const parsed = parseYouTubeRssXml(text, {
@@ -341,6 +350,68 @@ export async function syncAndRepairChannels(channels: YouTubeChannel[]): Promise
       if (cleanTitle.includes('%')) cleanTitle = decodeURIComponent(cleanTitle);
       if (cleanHandle.includes('%')) cleanHandle = decodeURIComponent(cleanHandle);
     } catch {}
+
+    const isJtbc = cleanTitle.includes('JTBC') || cleanHandle.includes('jtbc') || ch.channelId === 'UCEcw01c903W04nnh3486_2Q';
+    const isSbs = cleanTitle.includes('SBS') || cleanHandle.includes('sbs');
+    const isKbs = cleanTitle.includes('KBS') || cleanHandle.includes('kbs');
+    const isMbc = cleanTitle.includes('MBC') || cleanHandle.includes('mbc');
+    const isYtn = cleanTitle.includes('YTN') || cleanHandle.includes('ytn');
+    const isYonhap = cleanTitle.includes('연합뉴스') || cleanHandle.includes('yonhap');
+    const isChannelA = cleanTitle.includes('채널A') || cleanHandle.includes('channela');
+    const isMbn = cleanTitle.includes('MBN') || cleanHandle.includes('mbn');
+    const isHankyung = cleanTitle.includes('한국경제') || cleanHandle.includes('hankyung');
+
+    if (isJtbc && ch.channelId !== 'UCsU-I-vHLiaMfV_ceaYz5rQ') {
+      hasChanges = true;
+      updatedList.push({
+        ...ch,
+        channelId: 'UCsU-I-vHLiaMfV_ceaYz5rQ',
+        title: 'JTBC News',
+        handle: '@jtbc_news',
+        category: '뉴스/시사',
+        thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_jtbc=s900-c-k-c0x00ffffff-no-rj'
+      });
+      continue;
+    }
+
+    if (isSbs && ch.channelId !== 'UCkinYTS9IHqOEwR1Sze2JTw') {
+      hasChanges = true;
+      updatedList.push({
+        ...ch,
+        channelId: 'UCkinYTS9IHqOEwR1Sze2JTw',
+        title: 'SBS 뉴스',
+        handle: '@sbsnews8',
+        category: '뉴스/시사',
+        thumbnailUrl: 'https://yt3.googleusercontent.com/SqFZwlQcqLs4JMZd3lthkg79kCHi68eerNpkkahvEYSPWhm2afUNqFkbMC6J6JJcy9JJ_DzQ8w=s900-c-k-c0x00ffffff-no-rj'
+      });
+      continue;
+    }
+
+    if (isChannelA && ch.channelId !== 'UCfq4V1DAuaojnr2ryvWNysw') {
+      hasChanges = true;
+      updatedList.push({
+        ...ch,
+        channelId: 'UCfq4V1DAuaojnr2ryvWNysw',
+        title: '채널A 뉴스',
+        handle: '@channelA-news',
+        category: '뉴스/시사',
+        thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_channela=s900-c-k-c0x00ffffff-no-rj'
+      });
+      continue;
+    }
+
+    if (isHankyung && ch.channelId !== 'UCF8AeLlUbEpKju6v1H6p8Eg') {
+      hasChanges = true;
+      updatedList.push({
+        ...ch,
+        channelId: 'UCF8AeLlUbEpKju6v1H6p8Eg',
+        title: '한국경제TV',
+        handle: '@한국경제TV',
+        category: '뉴스/시사',
+        thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_hankyung=s900-c-k-c0x00ffffff-no-rj'
+      });
+      continue;
+    }
 
     const needsRepair = 
       !ch.channelId || 

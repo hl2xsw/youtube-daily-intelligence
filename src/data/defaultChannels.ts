@@ -143,13 +143,49 @@ export const CHANNEL_PRESET_PACKS = [
         subscriberCount: '460만명'
       },
       {
-        channelId: 'UCEcw01c903W04nnh3486_2Q',
+        channelId: 'UCsU-I-vHLiaMfV_ceaYz5rQ',
         title: 'JTBC News',
         handle: '@jtbc_news',
         category: '뉴스/시사' as const,
         description: '진실이 뉴스가 됩니다, JTBC 뉴스 공식 유튜브',
         thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_jtbc=s900-c-k-c0x00ffffff-no-rj',
         subscriberCount: '390만명'
+      },
+      {
+        channelId: 'UCfq4V1DAuaojnr2ryvWNysw',
+        title: '채널A 뉴스',
+        handle: '@channelA-news',
+        category: '뉴스/시사' as const,
+        description: '실시간 정치, 경제, 사회 속보 채널A 뉴스 공식 유튜브',
+        thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_channela=s900-c-k-c0x00ffffff-no-rj',
+        subscriberCount: '240만명'
+      },
+      {
+        channelId: 'UCG9aFJTZ-lMCHAiO1KJsirg',
+        title: 'MBN News',
+        handle: '@mbn_news',
+        category: '뉴스/시사' as const,
+        description: 'MBN 뉴스 공식 유튜브 채널, 정확하고 빠른 보도',
+        thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_mbn=s900-c-k-c0x00ffffff-no-rj',
+        subscriberCount: '230만명'
+      },
+      {
+        channelId: 'UCWlV3Lz_55UaX4JsMj-z__Q',
+        title: '뉴스TVCHOSUN',
+        handle: '@tvchosunnews',
+        category: '뉴스/시사' as const,
+        description: 'TV CHOSUN 뉴스 공식 유튜브 채널',
+        thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_tvchosun=s900-c-k-c0x00ffffff-no-rj',
+        subscriberCount: '220만명'
+      },
+      {
+        channelId: 'UCF8AeLlUbEpKju6v1H6p8Eg',
+        title: '한국경제TV',
+        handle: '@한국경제TV',
+        category: '뉴스/시사' as const,
+        description: '대한민국 대표 경제 및 실시간 증시 뉴스 전문 방송',
+        thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_hankyung=s900-c-k-c0x00ffffff-no-rj',
+        subscriberCount: '110만명'
       }
     ]
   },

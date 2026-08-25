@@ -592,9 +592,11 @@ function AppContent() {
             onReanalyze={handleAnalyzeVideo}
             onBatchAnalyzeYesterday={handleBatchAnalyzeYesterday}
             onSearch24hVideos={handleSearch24hVideos}
+            onSyncChannels={handleSyncChannels}
             onOpenExportModal={() => setIsExportModalOpen(true)}
             isBatchAnalyzing={isBatchAnalyzing}
             isSearching24h={isSearching24h}
+            isSyncing={isSyncing}
             analyzingVideoId={analyzingVideoId}
           />
         )}
