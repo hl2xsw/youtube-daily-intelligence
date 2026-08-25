@@ -1,7 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { YouTubeChannel, VideoCategory, AppSettings } from '../types';
 import { CHANNEL_PRESET_PACKS } from '../data/defaultChannels';
-import { lookupYouTubeChannel, getYouTubeChannelUrl } from '../utils/youtubeService';
+import { 
+  lookupYouTubeChannel, 
+  getYouTubeChannelUrl, 
+  searchYouTubeChannels,
+  YouTubeChannelSearchResult 
+} from '../utils/youtubeService';
 import { 
   Plus, 
   Trash2, 
@@ -22,7 +27,11 @@ import {
   FolderPlus, 
   Tag, 
   X,
-  RefreshCw
+  RefreshCw,
+  Eye,
+  CheckSquare,
+  Square,
+  ListFilter
 } from 'lucide-react';
 import { useToast } from './Toast';
 
@@ -70,10 +79,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 }) => {
   const { showToast } = useToast();
 
-  // Add Channel Form State
-  const [channelInput, setChannelInput] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<VideoCategory>(categories[0] || 'IT/테크');
-  const [isLookingUp, setIsLookingUp] = useState(false);
+  // Search & Add Channel Form State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDefaultCategory, setSelectedDefaultCategory] = useState<VideoCategory>(categories[0] || 'IT/테크');
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<YouTubeChannelSearchResult[]>([]);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [addedChannelIds, setAddedChannelIds] = useState<Set<string>>(new Set());
+  const [channelCategoryOverrides, setChannelCategoryOverrides] = useState<Record<string, VideoCategory>>({});
+
+  // Direct Manual Add Toggle
+  const [showDirectAdd, setShowDirectAdd] = useState(false);
+  const [directInput, setDirectInput] = useState('');
+  const [isDirectAdding, setIsDirectAdding] = useState(false);
+
+  // Preset Pack Preview Modal State
+  const [previewPack, setPreviewPack] = useState<typeof CHANNEL_PRESET_PACKS[0] | null>(null);
+  const [selectedPackChannelIds, setSelectedPackChannelIds] = useState<Set<string>>(new Set());
+
+  // Channel List Filter & Sync State
   const [isSyncingChannels, setIsSyncingChannels] = useState(false);
   const [searchChannelFilter, setSearchChannelFilter] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('ALL');
@@ -92,12 +116,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   }, [isCreatingCategory]);
 
-  // Keep selectedCategory valid if categories change
+  // Keep selectedDefaultCategory valid if categories change
   useEffect(() => {
-    if (categories.length > 0 && !categories.includes(selectedCategory)) {
-      setSelectedCategory(categories[0]);
+    if (categories.length > 0 && !categories.includes(selectedDefaultCategory)) {
+      setSelectedDefaultCategory(categories[0]);
     }
-  }, [categories, selectedCategory]);
+  }, [categories, selectedDefaultCategory]);
 
   // Handle Category Creation
   const handleCreateCategory = (nameToCreate?: string) => {
@@ -111,44 +135,79 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     if (success) {
       setNewCategoryInput('');
       setIsCreatingCategory(false);
-      setSelectedCategory(targetName);
+      setSelectedDefaultCategory(targetName);
     }
   };
 
-  // Handle Add Channel
-  const handleLookupAndAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!channelInput.trim()) {
-      showToast('채널 URL, @핸들 또는 채널 ID를 입력해주세요.', 'error');
+  // 1. Search YouTube Channels First
+  const handleSearchChannels = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const query = searchQuery.trim();
+    if (!query) {
+      showToast('검색할 채널명, @핸들, 또는 채널 URL을 입력해주세요.', 'error');
       return;
     }
 
-    setIsLookingUp(true);
+    setIsSearching(true);
+    setHasSearched(true);
     try {
-      let channelData: any = null;
-
-      // 1. Try server endpoint first
-      try {
-        const res = await fetch('/api/youtube/lookup-channel', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ input: channelInput.trim() })
-        });
-        const data = await res.json();
-        if (data.success && data.channel) {
-          channelData = data.channel;
-        }
-      } catch {
-        // server endpoint unavailable, continue to client lookup
+      const results = await searchYouTubeChannels(query);
+      setSearchResults(results);
+      if (results.length === 0) {
+        showToast(`'${query}'에 대한 검색 결과가 없습니다.`, 'info');
+      } else {
+        showToast(`'${query}' 관련 유튜브 채널 ${results.length}건을 검색했습니다.`, 'success');
       }
+    } catch (err: any) {
+      showToast('채널 검색 중 오류가 발생했습니다. 다시 시도해주세요.', 'error');
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
-      // 2. Client-side fallback if server didn't return
-      if (!channelData) {
-        channelData = await lookupYouTubeChannel(channelInput.trim());
-      }
+  // 2. Select & Add Channel from Search Results
+  const handleSelectChannelToAdd = (candidate: YouTubeChannelSearchResult) => {
+    const isAlreadyAdded = channels.some(c => 
+      c.channelId === candidate.channelId || 
+      (c.handle && candidate.handle && c.handle.toLowerCase() === candidate.handle.toLowerCase())
+    );
 
+    if (isAlreadyAdded) {
+      showToast(`'${candidate.title}' 채널은 이미 등록되어 있습니다.`, 'info');
+      return;
+    }
+
+    const assignedCategory = channelCategoryOverrides[candidate.channelId] || candidate.category || selectedDefaultCategory;
+
+    onAddChannel({
+      channelId: candidate.channelId,
+      title: candidate.title,
+      handle: candidate.handle,
+      description: candidate.description,
+      thumbnailUrl: candidate.thumbnailUrl,
+      category: assignedCategory,
+      isActive: true,
+      subscriberCount: candidate.subscriberCount
+    });
+
+    setAddedChannelIds(prev => new Set(prev).add(candidate.channelId));
+    showToast(`'${candidate.title}' 채널이 성공적으로 추가되었습니다!`, 'success');
+  };
+
+  // 3. Direct Manual Addition Fallback
+  const handleDirectAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const input = directInput.trim();
+    if (!input) {
+      showToast('채널 URL, @핸들 또는 ID를 입력해주세요.', 'error');
+      return;
+    }
+
+    setIsDirectAdding(true);
+    try {
+      const channelData = await lookupYouTubeChannel(input);
       if (channelData) {
-        // Check if already exists
         const exists = channels.some(c => 
           c.channelId === channelData.channelId || 
           (c.handle && c.handle.toLowerCase() === channelData.handle?.toLowerCase())
@@ -156,7 +215,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         if (exists) {
           showToast('이미 등록된 유튜브 채널입니다.', 'info');
-          setIsLookingUp(false);
+          setIsDirectAdding(false);
           return;
         }
 
@@ -166,34 +225,54 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           handle: channelData.handle,
           description: channelData.description,
           thumbnailUrl: channelData.thumbnailUrl,
-          category: selectedCategory,
+          category: selectedDefaultCategory,
           isActive: true,
           subscriberCount: channelData.subscriberCount
         });
 
-        setChannelInput('');
-        showToast(`'${channelData.title}' 채널이 성공적으로 추가되었습니다!`, 'success');
+        setDirectInput('');
+        setShowDirectAdd(false);
+        showToast(`'${channelData.title}' 채널이 추가되었습니다!`, 'success');
       } else {
-        showToast('유튜브 채널 정보를 찾을 수 없습니다. @핸들 또는 전체 URL을 다시 확인해주세요.', 'error');
+        showToast('채널 정보를 찾을 수 없습니다.', 'error');
       }
-    } catch (err: any) {
-      // Fallback manual addition
-      const title = channelInput.replace('@', '').trim();
-      onAddChannel({
-        channelId: `UC_${Date.now().toString(36)}`,
-        title: title || '신규 채널',
-        handle: channelInput.startsWith('@') ? channelInput : `@${title.toLowerCase().replace(/\s+/g, '')}`,
-        description: `${title} 채널 모니터링`,
-        thumbnailUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
-        category: selectedCategory,
-        isActive: true,
-        subscriberCount: '신규 등록'
-      });
-      setChannelInput('');
-      showToast(`'${title}' 채널이 등록되었습니다.`, 'success');
+    } catch {
+      showToast('채널 추가 중 오류가 발생했습니다.', 'error');
     } finally {
-      setIsLookingUp(false);
+      setIsDirectAdding(false);
     }
+  };
+
+  // 4. Open Preset Pack Preview Modal
+  const handleOpenPresetPreview = (pack: typeof CHANNEL_PRESET_PACKS[0]) => {
+    setPreviewPack(pack);
+    // Pre-select all channels that are not already registered
+    const initialSelected = new Set<string>();
+    pack.channels.forEach(ch => {
+      const isAlreadyAdded = channels.some(c => 
+        c.channelId === ch.channelId || 
+        (c.handle && ch.handle && c.handle.toLowerCase() === ch.handle.toLowerCase())
+      );
+      if (!isAlreadyAdded) {
+        initialSelected.add(ch.channelId);
+      }
+    });
+    setSelectedPackChannelIds(initialSelected);
+  };
+
+  // 5. Confirm Adding Selected Channels from Preset Pack
+  const handleConfirmAddPresetPack = () => {
+    if (!previewPack) return;
+
+    const channelsToAdd = previewPack.channels.filter(ch => selectedPackChannelIds.has(ch.channelId));
+    if (channelsToAdd.length === 0) {
+      showToast('추가할 채널을 1개 이상 선택해주세요.', 'info');
+      return;
+    }
+
+    onAddPresetPack(channelsToAdd);
+    setPreviewPack(null);
+    showToast(`'${previewPack.name}'에서 ${channelsToAdd.length}개 채널이 추가되었습니다!`, 'success');
   };
 
   // Filter channels list by search query and category filter
@@ -216,7 +295,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             유튜브 채널 관리 및 요약 설정
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            매일 전일 영상을 모니터링할 유튜브 채널을 추가/삭제하고, 카테고리를 자유롭게 생성하여 분류하세요.
+            채널을 검색하여 원하는 채널을 정확하게 선택 추가하고, 추천 프리셋 패키지 목록을 미리 확인 후 일괄 등록하세요.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -226,96 +305,281 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
-      {/* 1. Add YouTube Channel Section */}
-      <div className="bg-white p-5 rounded-xl border border-slate-200/90 shadow-2xs">
-        <h3 className="text-xs font-bold text-slate-900 mb-1 flex items-center gap-1.5">
-          <Plus className="w-3.5 h-3.5 text-slate-700" />
-          신규 유튜브 채널 추가하기
-        </h3>
-        <p className="text-xs text-slate-500 mb-3.5">
-          유튜브 채널 URL (예: <code className="font-mono text-slate-700">https://youtube.com/@shukaworld</code>), @핸들, 또는 채널 ID를 입력하세요.
-        </p>
-
-        <form onSubmit={handleLookupAndAdd} className="grid grid-cols-1 md:grid-cols-12 gap-2.5">
-          <div className="md:col-span-6">
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              채널 URL / @핸들 / ID
-            </label>
-            <input
-              type="text"
-              placeholder="예: @jocoding 또는 https://youtube.com/@shukaworld"
-              value={channelInput}
-              onChange={(e) => setChannelInput(e.target.value)}
-              className="w-full px-3 py-1.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400 transition-all text-slate-900"
-            />
+      {/* 1. Search-First Add YouTube Channel Section */}
+      <div className="bg-white p-5 rounded-xl border border-slate-200/90 shadow-2xs space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
+              <Search className="w-3.5 h-3.5 text-slate-700" />
+              유튜브 채널 검색 후 선택 추가
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              채널명, @핸들, 키워드 또는 채널 URL을 검색하면 일치하는 채널 목록에서 확인 후 안전하게 추가할 수 있습니다.
+            </p>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowDirectAdd(prev => !prev)}
+            className="text-xs text-slate-500 hover:text-slate-900 font-medium underline underline-offset-2"
+          >
+            {showDirectAdd ? '검색 모드로 전환' : 'URL/핸들 직접 입력 모드'}
+          </button>
+        </div>
 
-          <div className="md:col-span-3">
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-semibold text-slate-700">
-                기본 분류 카테고리
-              </label>
-              <button
-                type="button"
-                onClick={() => setIsCreatingCategory(true)}
-                className="text-[11px] text-slate-600 hover:text-slate-900 font-medium flex items-center gap-0.5"
-                title="새 카테고리 생성"
-              >
-                <Plus className="w-3 h-3" />
-                카테고리 추가
-              </button>
+        {/* Standard Search Bar */}
+        {!showDirectAdd ? (
+          <form onSubmit={handleSearchChannels} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="채널명, @핸들, 검색어 입력 (예: TTimesTV, @shukaworld, 경읽남, SBS 뉴스, 조코딩...)"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-8 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400 transition-all text-slate-900"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSearchResults([]);
+                    setHasSearched(false);
+                  }}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
-            <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value as VideoCategory)}
-              className="w-full px-3 py-1.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none cursor-pointer"
-            >
-              {categories.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-          </div>
 
-          <div className="md:col-span-3 flex items-end">
             <button
               type="submit"
-              disabled={isLookingUp}
-              className="w-full py-1.5 px-3.5 bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white font-semibold text-xs rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 h-[34px]"
+              disabled={isSearching || !searchQuery.trim()}
+              className="py-2 px-4 bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white font-semibold text-xs sm:text-sm rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 shrink-0 h-[38px]"
             >
-              <Plus className={`w-3.5 h-3.5 ${isLookingUp ? 'animate-spin' : ''}`} />
-              <span>{isLookingUp ? '채널 확인 중...' : '채널 추가'}</span>
+              {isSearching ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <Search className="w-4 h-4" />
+              )}
+              <span>{isSearching ? '검색 중...' : '채널 검색'}</span>
             </button>
-          </div>
-        </form>
+          </form>
+        ) : (
+          /* Direct URL / Handle Manual Add Form */
+          <form onSubmit={handleDirectAdd} className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-700">채널 URL / @핸들 / ID 직접 입력</span>
+              <button
+                type="button"
+                onClick={() => setShowDirectAdd(false)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+              <input
+                type="text"
+                placeholder="예: https://youtube.com/@TTimesTV 또는 @TTimesTV"
+                value={directInput}
+                onChange={(e) => setDirectInput(e.target.value)}
+                className="sm:col-span-8 px-3 py-1.5 text-xs sm:text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-400 text-slate-900"
+              />
+              <select
+                value={selectedDefaultCategory}
+                onChange={(e) => setSelectedDefaultCategory(e.target.value as VideoCategory)}
+                className="sm:col-span-2 px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none"
+              >
+                {categories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+              <button
+                type="submit"
+                disabled={isDirectAdding}
+                className="sm:col-span-2 py-1.5 px-3 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs rounded-lg transition-colors flex items-center justify-center gap-1 disabled:opacity-50"
+              >
+                <Plus className={`w-3.5 h-3.5 ${isDirectAdding ? 'animate-spin' : ''}`} />
+                <span>{isDirectAdding ? '확인 중...' : '즉시 추가'}</span>
+              </button>
+            </div>
+          </form>
+        )}
 
-        {/* 1-Click Preset Channel Packs */}
+        {/* Search Results Display Area */}
+        {hasSearched && (
+          <div className="pt-3 border-t border-slate-100 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                검색 결과 ({searchResults.length}개 채널 발견)
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchResults([]);
+                  setHasSearched(false);
+                }}
+                className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1"
+              >
+                <X className="w-3 h-3" />
+                <span>검색 결과 닫기</span>
+              </button>
+            </div>
+
+            {searchResults.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                {searchResults.map((result) => {
+                  const isAlreadyAdded = channels.some(c => 
+                    c.channelId === result.channelId || 
+                    (c.handle && result.handle && c.handle.toLowerCase() === result.handle.toLowerCase())
+                  ) || addedChannelIds.has(result.channelId);
+
+                  const channelCategory = channelCategoryOverrides[result.channelId] || result.category || selectedDefaultCategory;
+
+                  return (
+                    <div 
+                      key={result.channelId}
+                      className="p-3 rounded-lg border border-slate-200 bg-white hover:border-slate-300 transition-all flex flex-col justify-between gap-2.5 shadow-2xs"
+                    >
+                      <div className="flex items-start gap-3">
+                        <img
+                          src={result.thumbnailUrl}
+                          alt={result.title}
+                          referrerPolicy="no-referrer"
+                          className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">
+                              {result.title}
+                            </h4>
+                            <span className="text-[11px] text-slate-500 font-mono">
+                              {result.handle}
+                            </span>
+                            {result.subscriberCount && (
+                              <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded text-[10px] font-medium">
+                                {result.subscriberCount}
+                              </span>
+                            )}
+                          </div>
+                          {result.description && (
+                            <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">
+                              {result.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                        <div className="flex items-center gap-1 text-xs">
+                          <span className="text-slate-500 text-[11px]">분류:</span>
+                          <select
+                            value={channelCategory}
+                            onChange={(e) => {
+                              setChannelCategoryOverrides(prev => ({
+                                ...prev,
+                                [result.channelId]: e.target.value as VideoCategory
+                              }));
+                            }}
+                            className="px-2 py-1 text-xs font-medium rounded-md border border-slate-200 bg-slate-50 text-slate-700 cursor-pointer focus:outline-none"
+                          >
+                            {categories.map(cat => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={isAlreadyAdded}
+                          onClick={() => handleSelectChannelToAdd(result)}
+                          className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1 ${
+                            isAlreadyAdded
+                              ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-default'
+                              : 'bg-slate-900 hover:bg-slate-800 text-white shadow-2xs'
+                          }`}
+                        >
+                          {isAlreadyAdded ? (
+                            <>
+                              <Check className="w-3.5 h-3.5" />
+                              <span>이미 추가됨</span>
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>채널 추가하기</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="p-6 text-center text-xs text-slate-500 bg-slate-50 rounded-lg border border-slate-200">
+                일치하는 유튜브 채널을 찾을 수 없습니다. 철자를 확인하거나 @핸들을 입력해보세요.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 1-Click Preset Channel Packs (With Preview & Select Flow) */}
         <div className="mt-5 pt-4 border-t border-slate-100">
           <label className="block text-xs font-semibold text-slate-700 mb-2 flex items-center gap-1.5">
             <PackagePlus className="w-3.5 h-3.5 text-slate-700" />
-            추천 채널 프리셋 패키지 (원클릭 추가)
+            추천 채널 프리셋 패키지 (목록 확인 및 선택 추가)
           </label>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            {CHANNEL_PRESET_PACKS.map((pack, idx) => (
-              <div key={idx} className="p-3 rounded-lg border border-slate-200 bg-slate-50/50 hover:bg-slate-50 transition-colors flex flex-col justify-between">
-                <div>
-                  <h4 className="text-xs font-bold text-slate-900">{pack.name}</h4>
-                  <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">{pack.description}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onAddPresetPack(pack.channels)}
-                  className="mt-2.5 w-full py-1.5 px-2.5 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-md border border-slate-200 transition-colors flex items-center justify-center gap-1 shadow-2xs"
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            {CHANNEL_PRESET_PACKS.map((pack) => {
+              const totalChannels = pack.channels.length;
+              const alreadyCount = pack.channels.filter(pc => 
+                channels.some(c => c.channelId === pc.channelId || (c.handle && pc.handle && c.handle.toLowerCase() === pc.handle.toLowerCase()))
+              ).length;
+
+              return (
+                <div 
+                  key={pack.id} 
+                  className="p-3.5 rounded-lg border border-slate-200 bg-slate-50/60 hover:bg-slate-50 transition-colors flex flex-col justify-between"
                 >
-                  <Plus className="w-3 h-3 text-slate-500" />
-                  <span>패키지 일괄 추가 ({pack.channels.length}개)</span>
-                </button>
-              </div>
-            ))}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="px-1.5 py-0.5 bg-slate-200/70 text-slate-700 rounded text-[10px] font-semibold">
+                        {pack.badge}
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        {alreadyCount === totalChannels ? '전체 등록됨' : `${alreadyCount}/${totalChannels}개 등록`}
+                      </span>
+                    </div>
+                    <h4 className="text-xs font-bold text-slate-900 mt-1">{pack.name}</h4>
+                    <p className="text-[11px] text-slate-500 mt-1 line-clamp-2 leading-relaxed">{pack.description}</p>
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenPresetPreview(pack)}
+                      className="flex-1 py-1.5 px-2 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-md border border-slate-200 transition-colors flex items-center justify-center gap-1 shadow-2xs"
+                      title="포함된 채널 목록을 확인하고 원하는 채널만 선택하여 추가합니다."
+                    >
+                      <Eye className="w-3 h-3 text-slate-500" />
+                      <span>채널 미리보기 ({totalChannels}개)</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* 2. Registered YouTube Channels List & Management + Category Creation */}
+      {/* 2. Registered YouTube Channels List & Management */}
       <div className="bg-white p-5 rounded-xl border border-slate-200/90 shadow-2xs space-y-4">
         {/* Section Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -510,7 +774,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     ({count})
                   </span>
                 </button>
-                {/* Delete Category Button (allows deleting any category) */}
                 <button
                   type="button"
                   onClick={(e) => {
@@ -768,6 +1031,164 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Preset Pack Preview Modal */}
+      {previewPack && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-2xl rounded-xl shadow-2xl border border-slate-200 p-5 space-y-4 max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] font-bold">
+                    {previewPack.badge}
+                  </span>
+                  <h4 className="text-sm font-bold text-slate-900">{previewPack.name}</h4>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">{previewPack.description}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewPack(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-md"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Selection Toolbar */}
+            <div className="flex items-center justify-between text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-200/80">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allIds = new Set<string>();
+                    previewPack.channels.forEach(ch => {
+                      const isAlready = channels.some(c => c.channelId === ch.channelId || (c.handle && ch.handle && c.handle.toLowerCase() === ch.handle.toLowerCase()));
+                      if (!isAlready) allIds.add(ch.channelId);
+                    });
+                    if (selectedPackChannelIds.size === allIds.size) {
+                      setSelectedPackChannelIds(new Set());
+                    } else {
+                      setSelectedPackChannelIds(allIds);
+                    }
+                  }}
+                  className="font-semibold text-slate-700 hover:text-slate-900 flex items-center gap-1.5"
+                >
+                  {selectedPackChannelIds.size > 0 ? (
+                    <CheckSquare className="w-3.5 h-3.5 text-slate-900" />
+                  ) : (
+                    <Square className="w-3.5 h-3.5 text-slate-400" />
+                  )}
+                  <span>전체 선택 / 해제</span>
+                </button>
+              </div>
+              <span className="text-slate-500 font-medium">
+                선택됨: <b className="text-slate-900">{selectedPackChannelIds.size}</b> / {previewPack.channels.length}개
+              </span>
+            </div>
+
+            {/* Channels List */}
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-lg">
+              {previewPack.channels.map((ch) => {
+                const isAlready = channels.some(c => 
+                  c.channelId === ch.channelId || 
+                  (c.handle && ch.handle && c.handle.toLowerCase() === ch.handle.toLowerCase())
+                );
+                const isChecked = selectedPackChannelIds.has(ch.channelId);
+
+                return (
+                  <div
+                    key={ch.channelId}
+                    onClick={() => {
+                      if (isAlready) return;
+                      setSelectedPackChannelIds(prev => {
+                        const next = new Set(prev);
+                        if (next.has(ch.channelId)) {
+                          next.delete(ch.channelId);
+                        } else {
+                          next.add(ch.channelId);
+                        }
+                        return next;
+                      });
+                    }}
+                    className={`p-3 flex items-center justify-between gap-3 transition-colors ${
+                      isAlready 
+                        ? 'bg-slate-50/60 cursor-not-allowed opacity-75' 
+                        : 'hover:bg-slate-50 cursor-pointer bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <input
+                        type="checkbox"
+                        disabled={isAlready}
+                        checked={isAlready || isChecked}
+                        onChange={() => {}}
+                        className="w-4 h-4 accent-slate-900 rounded cursor-pointer"
+                      />
+                      <img
+                        src={ch.thumbnailUrl}
+                        alt={ch.title}
+                        referrerPolicy="no-referrer"
+                        className="w-9 h-9 rounded-full object-cover border border-slate-200 shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold text-slate-900">{ch.title}</span>
+                          <span className="text-[11px] text-slate-500 font-mono">{ch.handle}</span>
+                          <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded text-[10px] font-medium">
+                            {ch.subscriberCount}
+                          </span>
+                        </div>
+                        {ch.description && (
+                          <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">{ch.description}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[11px] font-medium border border-slate-200/80">
+                        {ch.category}
+                      </span>
+                      {isAlready && (
+                        <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[11px] font-bold border border-emerald-200 flex items-center gap-0.5">
+                          <Check className="w-3 h-3" />
+                          이미 등록됨
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+              <span className="text-xs text-slate-500">
+                선택한 채널을 내 모니터링 목록에 즉시 등록하고 최신 영상을 연동합니다.
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPreviewPack(null)}
+                  className="px-3.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-md"
+                >
+                  닫기
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedPackChannelIds.size === 0}
+                  onClick={handleConfirmAddPresetPack}
+                  className="px-4 py-1.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-md disabled:opacity-50 transition-colors shadow-2xs flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>선택한 {selectedPackChannelIds.size}개 채널 추가하기</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Channel Confirmation Modal */}
       {channelToDelete && (

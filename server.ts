@@ -162,6 +162,46 @@ const KNOWN_CHANNELS_MAP: Array<{
     thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_nomad=s900-c-k-c0x00ffffff-no-rj',
     category: 'IT/테크',
     subscriberCount: '51만명'
+  },
+  {
+    keywords: ['ttimestv', 'ttimes', '티타임즈', '티타임즈tv', '티타임스'],
+    channelId: 'UCelFN6fJ6OY6v8pbc_SLiXA',
+    title: '티타임즈TV',
+    handle: '@TTimesTV',
+    description: '세상의 혁신과 비즈니스, 테크 트렌드를 가장 깊이 있게 분석하는 티타임즈TV 공식 채널',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_lk_PZbzPbJP9ZNfuzPC0U8_Q2dafVkwKhoNGi_G2pcjg=s900-c-k-c0x00ffffff-no-rj',
+    category: '비즈니스/스타트업',
+    subscriberCount: '35.5만명'
+  },
+  {
+    keywords: ['eoeoeo', 'eo', '이오', '태용', '스타트업'],
+    channelId: 'UC6tTZ_yP_Kx6kHjU3_oE1sQ',
+    title: 'EO 이오',
+    handle: '@eoeoeo',
+    description: '글로벌 스타트업 혁신가들과 비즈니스 리더들의 스토리',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_eo=s900-c-k-c0x00ffffff-no-rj',
+    category: '비즈니스/스타트업',
+    subscriberCount: '68만명'
+  },
+  {
+    keywords: ['techmong', '테크몽'],
+    channelId: 'UCe_P1k1G1zI0Nf_F7dKqT0w',
+    title: '테크몽 Techmong',
+    handle: '@techmong',
+    description: '쉽고 친절한 IT 기기 및 테크 제품 심층 분석',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_techmong=s900-c-k-c0x00ffffff-no-rj',
+    category: 'IT/테크',
+    subscriberCount: '75만명'
+  },
+  {
+    keywords: ['1min', '1minonly', '1분만'],
+    channelId: 'UCkglhL_29gGqP_lA7b52dJQ',
+    title: '1분만',
+    handle: '@1minonly',
+    description: '세상의 모든 흥미로운 1분 지식과 이야기',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_1min=s900-c-k-c0x00ffffff-no-rj',
+    category: '과학/지식',
+    subscriberCount: '135만명'
   }
 ];
 
@@ -353,6 +393,145 @@ app.post('/api/youtube/lookup-channel', async (req, res) => {
   } catch (error: any) {
     console.error('Channel lookup error:', error);
     res.status(500).json({ error: error.message || '채널 정보를 확인하는데 실패했습니다.' });
+  }
+});
+
+// 2-1. Search YouTube Channels (Returns multiple candidate channels for user selection)
+app.post('/api/youtube/search-channels', async (req, res) => {
+  try {
+    const { query } = req.body;
+    if (!query || !query.trim()) {
+      return res.status(400).json({ error: '검색어를 입력해주세요.' });
+    }
+
+    let clean = query.trim();
+    try {
+      clean = decodeURIComponent(clean);
+    } catch {}
+
+    const results: Array<{
+      channelId: string;
+      title: string;
+      handle: string;
+      description: string;
+      thumbnailUrl: string;
+      subscriberCount: string;
+      category: string;
+    }> = [];
+    const seenIds = new Set<string>();
+
+    // 1. Check known channels catalog for direct/keyword match
+    const normalized = clean.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+    for (const item of KNOWN_CHANNELS_MAP) {
+      const match = item.keywords.some(kw => {
+        const normKw = kw.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+        return normKw === normalized || normKw.includes(normalized) || normalized.includes(normKw);
+      }) || item.title.toLowerCase().includes(normalized) || item.handle.toLowerCase().includes(normalized);
+
+      if (match && !seenIds.has(item.channelId)) {
+        seenIds.add(item.channelId);
+        results.push({
+          channelId: item.channelId,
+          title: item.title,
+          handle: item.handle,
+          description: item.description,
+          thumbnailUrl: item.thumbnailUrl,
+          subscriberCount: item.subscriberCount,
+          category: item.category
+        });
+      }
+    }
+
+    // 2. If query looks like a handle, URL, or channel ID, try direct resolve first
+    if (clean.startsWith('@') || clean.startsWith('http') || /^UC[a-zA-Z0-9_-]{22}$/.test(clean)) {
+      try {
+        const direct = await resolveChannelInfo(clean);
+        if (direct && direct.channelId && !seenIds.has(direct.channelId)) {
+          seenIds.add(direct.channelId);
+          results.unshift(direct);
+        }
+      } catch {
+        // continue
+      }
+    }
+
+    // 3. YouTube search with channel filter (sp=EgIQAg%253D%253D)
+    try {
+      const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(clean)}&sp=EgIQAg%253D%253D`;
+      const searchRes = await fetch(searchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
+        }
+      });
+
+      if (searchRes.ok) {
+        const html = await searchRes.text();
+        const match = html.match(/var ytInitialData = ({.*?});<\/script>/s) || html.match(/ytInitialData\s*=\s*({.+?});/s);
+        if (match) {
+          const data = JSON.parse(match[1]);
+          const traverse = (node: any) => {
+            if (!node || typeof node !== 'object') return;
+            if (node.channelRenderer) {
+              const cr = node.channelRenderer;
+              const channelId = cr.channelId;
+              if (channelId && !seenIds.has(channelId)) {
+                seenIds.add(channelId);
+                const title = cr.title?.simpleText || cr.title?.runs?.map((r: any) => r.text).join('') || '';
+                let handle = cr.navigationEndpoint?.browseEndpoint?.canonicalBaseUrl || '';
+                if (handle.startsWith('/')) handle = handle.substring(1);
+                try { handle = decodeURIComponent(handle); } catch {}
+                if (!handle.startsWith('@') && handle) handle = `@${handle}`;
+                if (!handle && cr.subscriberCountText?.simpleText?.startsWith('@')) {
+                  handle = cr.subscriberCountText.simpleText;
+                }
+
+                let subscriberCount = cr.videoCountText?.simpleText || cr.subscriberCountText?.simpleText || '구독자 정보 없음';
+                let description = cr.descriptionSnippet?.runs?.map((r: any) => r.text).join('') || '';
+                let thumb = cr.thumbnail?.thumbnails?.[cr.thumbnail.thumbnails.length - 1]?.url || '';
+                if (thumb.startsWith('//')) thumb = 'https:' + thumb;
+
+                // Smart Category Inference
+                let category = '기타';
+                const lowerText = `${title} ${description}`.toLowerCase();
+                if (lowerText.includes('뉴스') || lowerText.includes('news') || lowerText.includes('시사') || lowerText.includes('보도') || lowerText.includes('mbc') || lowerText.includes('sbs') || lowerText.includes('kbs') || lowerText.includes('ytn') || lowerText.includes('jtbc')) {
+                  category = '뉴스/시사';
+                } else if (lowerText.includes('경제') || lowerText.includes('주식') || lowerText.includes('투자') || lowerText.includes('금융') || lowerText.includes('재테크') || lowerText.includes('부동산') || lowerText.includes('슈카') || lowerText.includes('삼프로') || lowerText.includes('김광석')) {
+                  category = '경제/재테크';
+                } else if (lowerText.includes('ai') || lowerText.includes('개발') || lowerText.includes('테크') || lowerText.includes('코딩') || lowerText.includes('it') || lowerText.includes('기술') || lowerText.includes('컴퓨터') || lowerText.includes('소프트웨어') || lowerText.includes('앱')) {
+                  category = 'IT/테크';
+                } else if (lowerText.includes('스타트업') || lowerText.includes('비즈니스') || lowerText.includes('창업') || lowerText.includes('기업') || lowerText.includes('경영') || lowerText.includes('티타임즈') || lowerText.includes('ttimes') || lowerText.includes('이오') || lowerText.includes('ceo')) {
+                  category = '비즈니스/스타트업';
+                } else if (lowerText.includes('과학') || lowerText.includes('우주') || lowerText.includes('지식') || lowerText.includes('물리') || lowerText.includes('공학') || lowerText.includes('1분만') || lowerText.includes('안될과학')) {
+                  category = '과학/지식';
+                } else if (lowerText.includes('영어') || lowerText.includes('공부') || lowerText.includes('자기계발') || lowerText.includes('독서') || lowerText.includes('학습') || lowerText.includes('동기부여')) {
+                  category = '자기계발/교육';
+                }
+
+                results.push({
+                  channelId,
+                  title: title || clean,
+                  handle: handle || `@${title.replace(/\s+/g, '').toLowerCase()}`,
+                  subscriberCount,
+                  description: description || `${title} 채널`,
+                  thumbnailUrl: thumb || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
+                  category
+                });
+              }
+            }
+            for (const k of Object.keys(node)) traverse(node[k]);
+          };
+          traverse(data);
+        }
+      }
+    } catch (searchErr) {
+      console.warn('YouTube channel search error:', searchErr);
+    }
+
+    res.json({ success: true, channels: results.slice(0, 15) });
+  } catch (error: any) {
+    console.error('Channel search endpoint error:', error);
+    res.status(500).json({ error: error.message || '채널 검색에 실패했습니다.' });
   }
 });
 

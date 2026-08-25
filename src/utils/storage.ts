@@ -34,7 +34,93 @@ export function loadChannels(): YouTubeChannel[] {
       saveChannels(DEFAULT_CHANNELS);
       return DEFAULT_CHANNELS;
     }
-    return JSON.parse(raw);
+    const parsed: YouTubeChannel[] = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      let hasChanges = false;
+      const cleaned = parsed.map(ch => {
+        let title = ch.title || '';
+        let handle = ch.handle || '';
+        let channelId = ch.channelId || '';
+        let thumbnailUrl = ch.thumbnailUrl || '';
+        let category = ch.category || '기타';
+        let subscriberCount = ch.subscriberCount || '등록 완료';
+
+        // Auto decode URI components (e.g. %EA%B2%BD...)
+        if (title.includes('%')) {
+          try { title = decodeURIComponent(title); hasChanges = true; } catch {}
+        }
+        if (handle.includes('%')) {
+          try { handle = decodeURIComponent(handle); hasChanges = true; } catch {}
+        }
+
+        // TTimesTV specific heal
+        if (
+          title.toLowerCase().includes('ttimes') || 
+          title.includes('티타임즈') || 
+          handle.toLowerCase().includes('ttimestv') ||
+          channelId === 'UCelFN6fJ6OY6v8pbc_SLiXA'
+        ) {
+          if (channelId !== 'UCelFN6fJ6OY6v8pbc_SLiXA') {
+            channelId = 'UCelFN6fJ6OY6v8pbc_SLiXA';
+            hasChanges = true;
+          }
+          if (title === 'TTimesTV' || title === '@TTimesTV' || !title) {
+            title = '티타임즈TV';
+            hasChanges = true;
+          }
+          if (handle !== '@TTimesTV') {
+            handle = '@TTimesTV';
+            hasChanges = true;
+          }
+          if (!thumbnailUrl || thumbnailUrl.includes('unsplash')) {
+            thumbnailUrl = 'https://yt3.googleusercontent.com/ytc/AIdro_lk_PZbzPbJP9ZNfuzPC0U8_Q2dafVkwKhoNGi_G2pcjg=s900-c-k-c0x00ffffff-no-rj';
+            hasChanges = true;
+          }
+          if (!ch.description || ch.description.includes('사용자 직접 등록')) {
+            ch.description = '세상의 혁신과 비즈니스, 테크 트렌드를 가장 깊이 있게 분석하는 티타임즈TV 공식 채널';
+            hasChanges = true;
+          }
+          category = '비즈니스/스타트업';
+          subscriberCount = '35.5만명';
+        }
+
+        // 경읽남 / 김광석TV specific heal
+        if (
+          title.includes('경읽남') || 
+          title.includes('김광석') || 
+          handle.includes('경읽남') ||
+          handle.includes('김광석') ||
+          channelId === 'UC3pfEoxaRDT6hvZZjpHu7Tg'
+        ) {
+          if (channelId !== 'UC3pfEoxaRDT6hvZZjpHu7Tg') {
+            channelId = 'UC3pfEoxaRDT6hvZZjpHu7Tg';
+            hasChanges = true;
+          }
+          title = '경제 읽어주는 남자(김광석TV)';
+          handle = '@경읽남_김광석TV';
+          thumbnailUrl = 'https://yt3.googleusercontent.com/Tai2Mxx-1IWzJ6EyiRDAQfp5c3ZAV_A_jNk7ESsTmrhk2Ju7b8xecJ35HVTcaCSB98392kxxydc=s900-c-k-c0x00ffffff-no-rj';
+          category = '경제/재테크';
+          subscriberCount = '51.7만명';
+          hasChanges = true;
+        }
+
+        return {
+          ...ch,
+          channelId,
+          title,
+          handle,
+          thumbnailUrl: thumbnailUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
+          category,
+          subscriberCount
+        };
+      });
+
+      if (hasChanges) {
+        saveChannels(cleaned);
+      }
+      return cleaned;
+    }
+    return DEFAULT_CHANNELS;
   } catch (e) {
     console.error('Failed to load channels', e);
     return DEFAULT_CHANNELS;

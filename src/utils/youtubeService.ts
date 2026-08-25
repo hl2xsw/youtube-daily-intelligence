@@ -277,6 +277,55 @@ export async function searchAndSummarize24hVideos(channels: YouTubeChannel[]): P
   };
 }
 
+// Search YouTube Channels (Returns multiple candidate channels for search-first addition)
+export interface YouTubeChannelSearchResult {
+  channelId: string;
+  title: string;
+  handle: string;
+  description: string;
+  thumbnailUrl: string;
+  subscriberCount: string;
+  category: string;
+}
+
+export async function searchYouTubeChannels(query: string): Promise<YouTubeChannelSearchResult[]> {
+  const cleanQuery = query.trim();
+  if (!cleanQuery) return [];
+
+  try {
+    const res = await fetch('/api/youtube/search-channels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: cleanQuery })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.channels) && data.channels.length > 0) {
+        return data.channels;
+      }
+    }
+  } catch (e) {
+    console.warn('Backend channel search error, attempting direct lookup fallback:', e);
+  }
+
+  // Fallback: try single lookup
+  const single = await lookupYouTubeChannel(cleanQuery);
+  if (single && single.channelId) {
+    return [{
+      channelId: single.channelId,
+      title: single.title,
+      handle: single.handle,
+      description: single.description || `${single.title} 채널`,
+      thumbnailUrl: single.thumbnailUrl,
+      subscriberCount: single.subscriberCount || '구독자 정보 없음',
+      category: single.category
+    }];
+  }
+
+  return [];
+}
+
 // Auto Repair & Sync Channels metadata (e.g. resolve dummy UC_ IDs, update titles and real thumbnails)
 export async function syncAndRepairChannels(channels: YouTubeChannel[]): Promise<{
   updatedChannels: YouTubeChannel[];
@@ -286,27 +335,39 @@ export async function syncAndRepairChannels(channels: YouTubeChannel[]): Promise
   const updatedList: YouTubeChannel[] = [];
 
   for (const ch of channels) {
+    let cleanTitle = ch.title;
+    let cleanHandle = ch.handle;
+    try {
+      if (cleanTitle.includes('%')) cleanTitle = decodeURIComponent(cleanTitle);
+      if (cleanHandle.includes('%')) cleanHandle = decodeURIComponent(cleanHandle);
+    } catch {}
+
     const needsRepair = 
       !ch.channelId || 
       ch.channelId.startsWith('UC_') || 
       ch.channelId.length < 22 ||
       ch.title.startsWith('http') ||
+      ch.title.includes('%') ||
+      ch.handle.includes('%') ||
       !ch.thumbnailUrl ||
-      ch.thumbnailUrl.includes('unsplash');
+      ch.thumbnailUrl.includes('unsplash') ||
+      ch.handle.toLowerCase().includes('ttimes') ||
+      ch.title.toLowerCase().includes('ttimes');
 
     if (needsRepair) {
       try {
-        const lookup = await lookupYouTubeChannel(ch.handle || ch.title || ch.channelId);
+        const lookup = await lookupYouTubeChannel(cleanHandle || cleanTitle || ch.channelId);
         if (lookup && lookup.channelId && lookup.channelId.startsWith('UC') && !lookup.channelId.startsWith('UC_')) {
           hasChanges = true;
           updatedList.push({
             ...ch,
             channelId: lookup.channelId,
-            title: lookup.title || ch.title,
-            handle: lookup.handle || ch.handle,
+            title: lookup.title || cleanTitle,
+            handle: lookup.handle || cleanHandle,
             description: lookup.description || ch.description,
             thumbnailUrl: lookup.thumbnailUrl || ch.thumbnailUrl,
-            subscriberCount: lookup.subscriberCount || ch.subscriberCount
+            subscriberCount: lookup.subscriberCount || ch.subscriberCount,
+            category: ch.category || lookup.category
           });
           continue;
         }
@@ -315,7 +376,11 @@ export async function syncAndRepairChannels(channels: YouTubeChannel[]): Promise
       }
     }
 
-    updatedList.push(ch);
+    updatedList.push({
+      ...ch,
+      title: cleanTitle,
+      handle: cleanHandle
+    });
   }
 
   return { updatedChannels: updatedList, hasChanges };
@@ -323,8 +388,12 @@ export async function syncAndRepairChannels(channels: YouTubeChannel[]): Promise
 
 // Real Channel Lookup
 export async function lookupYouTubeChannel(input: string): Promise<YouTubeChannel | null> {
-  const cleanInput = input.trim();
+  let cleanInput = input.trim();
   if (!cleanInput) return null;
+
+  try {
+    cleanInput = decodeURIComponent(cleanInput);
+  } catch {}
 
   // 1. Try server API
   try {
