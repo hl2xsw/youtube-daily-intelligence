@@ -19,7 +19,8 @@ import {
   Layers,
   RotateCcw,
   RefreshCw,
-  ArrowUpDown
+  ArrowUpDown,
+  Flame
 } from 'lucide-react';
 import { generateBatchMarkdown, downloadFile } from '../utils/exportUtils';
 import { useToast } from './Toast';
@@ -181,10 +182,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     <div className="space-y-6">
       {/* 1. Quick KPI Statistics Banner */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {/* Metric 1: 24h Videos */}
+        {/* Metric 1: Today Videos */}
+        <div 
+          onClick={() => setFilters(prev => ({ ...prev, dateFilter: 'today' }))}
+          className={`p-4 sm:p-5 rounded-xl border transition-all cursor-pointer shadow-2xs flex items-center gap-3.5 ${
+            filters.dateFilter === 'today'
+              ? 'bg-emerald-50/80 border-emerald-400 ring-2 ring-emerald-400/20'
+              : 'bg-white border-slate-200/90 hover:border-slate-300'
+          }`}
+        >
+          <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-700 shrink-0">
+            <Flame className="w-5 h-5 text-emerald-600 fill-emerald-600" />
+          </div>
+          <div>
+            <div className="text-xs font-semibold text-emerald-950">오늘(당일) 업로드</div>
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className="text-2xl font-black text-emerald-950">{todayVideos.length}</span>
+              <span className="text-xs text-emerald-700 font-medium">개 감지</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Metric 2: 24h Videos */}
         <div 
           onClick={() => setFilters(prev => ({ ...prev, dateFilter: '24hours' }))}
-          className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center gap-3.5 cursor-pointer hover:border-slate-400 transition-colors"
+          className={`p-4 sm:p-5 rounded-xl border transition-all cursor-pointer shadow-2xs flex items-center gap-3.5 ${
+            filters.dateFilter === '24hours'
+              ? 'bg-amber-50/80 border-amber-400 ring-2 ring-amber-400/20'
+              : 'bg-white border-slate-200/90 hover:border-slate-300'
+          }`}
         >
           <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center text-amber-700 shrink-0">
             <Tv2 className="w-5 h-5 text-amber-600" />
@@ -198,10 +224,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Metric 2: Yesterday Videos */}
+        {/* Metric 3: Yesterday Videos */}
         <div 
           onClick={() => setFilters(prev => ({ ...prev, dateFilter: 'yesterday' }))}
-          className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center gap-3.5 cursor-pointer hover:border-slate-400 transition-colors"
+          className={`p-4 sm:p-5 rounded-xl border transition-all cursor-pointer shadow-2xs flex items-center gap-3.5 ${
+            filters.dateFilter === 'yesterday'
+              ? 'bg-slate-100 border-slate-400 ring-2 ring-slate-400/20'
+              : 'bg-white border-slate-200/90 hover:border-slate-300'
+          }`}
         >
           <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-700 shrink-0">
             <Clock className="w-5 h-5 text-slate-600" />
@@ -215,7 +245,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Metric 3: AI Summarized Count */}
+        {/* Metric 4: AI Summarized Count */}
         <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center gap-3.5">
           <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0">
             <CheckCircle2 className="w-5 h-5" />
@@ -228,35 +258,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
         </div>
-
-        {/* Metric 4: Active Monitoring Channels */}
-        <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
-            <Layers className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xs font-medium text-slate-500">모니터링 채널</div>
-            <div className="flex items-baseline gap-1.5 mt-0.5">
-              <span className="text-2xl font-bold text-slate-900">{activeChannelsCount}</span>
-              <span className="text-xs text-slate-500">개 활성화</span>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* 2. Top Batch Action Bar */}
       <div className="bg-slate-900 rounded-xl p-4 sm:p-5 text-white shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-slate-800">
         <div>
           <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-xs font-semibold border border-emerald-500/30">
-              실시간 24H 전용
+            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-xs font-semibold border border-emerald-500/30 flex items-center gap-1">
+              <Flame className="w-3 h-3 text-emerald-400 fill-emerald-400" />
+              실시간 당일 및 24H 전용
             </span>
             <h2 className="text-sm sm:text-base font-bold text-white tracking-tight">
-              24시간 이내 최신 영상 새로고침 및 Gemini AI 핵심 요약
+              오늘 & 24시간 실시간 영상 동기화 및 Gemini AI 요약
             </h2>
           </div>
           <p className="text-xs text-slate-300 mt-1">
-            24시간 이전 영상은 자동 정리하고, 등록된 모든 채널의 최신 영상을 즉시 스캔하여 Gemini AI로 자동 요약합니다.
+            등록된 채널의 실시간 최신 영상(방금 전, 수시간 전, 오늘 및 전일 영상)을 즉시 수집하고 Gemini 2.5 AI로 핵심 요약합니다.
           </p>
         </div>
 
@@ -267,10 +284,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             onClick={onRefreshAndSummarize24h}
             disabled={isProcessing || isBatchAnalyzing}
             className="px-4 py-2 text-xs font-bold bg-amber-400 hover:bg-amber-300 active:bg-amber-500 text-slate-950 rounded-lg shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50"
-            title="현재 시간 기준 최근 24시간 영상을 새로고침하고 미분석 영상을 Gemini AI로 자동 요약합니다"
+            title="현재 시간 기준 오늘 및 최근 24시간 영상을 새로고침하고 미분석 영상을 Gemini AI로 자동 요약합니다"
           >
             <Sparkles className={`w-3.5 h-3.5 text-slate-950 ${isProcessing ? 'animate-spin' : ''}`} />
-            <span>{isProcessing ? '24H 새로고침 & 요약 중...' : '24H 새로고침 & AI 요약'}</span>
+            <span>{isProcessing ? '최신 영상 새로고침 & 요약 중...' : '🔥 실시간 새로고침 & AI 요약'}</span>
           </button>
 
           {/* Batch Markdown Dossier */}
@@ -293,6 +310,57 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <span>엑셀 / CSV</span>
           </button>
         </div>
+      </div>
+
+      {/* 2.5 Quick Date Filter Segment */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <span className="text-xs font-semibold text-slate-500 shrink-0 mr-1">기간 필터:</span>
+        <button
+          onClick={() => setFilters(prev => ({ ...prev, dateFilter: 'today' }))}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+            filters.dateFilter === 'today'
+              ? 'bg-emerald-600 text-white shadow-2xs'
+              : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200/80'
+          }`}
+        >
+          <Flame className="w-3 h-3 fill-current" />
+          오늘(당일) 업로드 ({todayVideos.length})
+        </button>
+
+        <button
+          onClick={() => setFilters(prev => ({ ...prev, dateFilter: '24hours' }))}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+            filters.dateFilter === '24hours'
+              ? 'bg-slate-900 text-white shadow-2xs'
+              : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/90'
+          }`}
+        >
+          <Tv2 className="w-3 h-3" />
+          최근 24시간 ({within24hVideos.length})
+        </button>
+
+        <button
+          onClick={() => setFilters(prev => ({ ...prev, dateFilter: 'yesterday' }))}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+            filters.dateFilter === 'yesterday'
+              ? 'bg-slate-900 text-white shadow-2xs'
+              : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/90'
+          }`}
+        >
+          <Clock className="w-3 h-3" />
+          전일(어제) ({yesterdayVideos.length})
+        </button>
+
+        <button
+          onClick={() => setFilters(prev => ({ ...prev, dateFilter: 'all' }))}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+            filters.dateFilter === 'all'
+              ? 'bg-slate-900 text-white shadow-2xs'
+              : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/90'
+          }`}
+        >
+          전체 수집 영상 ({videos.length})
+        </button>
       </div>
 
       {/* 3. Category Filter Pills */}

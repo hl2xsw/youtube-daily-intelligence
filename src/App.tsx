@@ -48,7 +48,7 @@ function AppContent() {
   const [analyzingVideoId, setAnalyzingVideoId] = useState<string | null>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
 
-  // Sync real videos for channels in parallel - strictly enforcing 24-hour window
+  // Sync real videos for channels in parallel - retaining up to 72 hours for today, 24h, and yesterday
   const syncChannelVideos = useCallback(async (targetChannels: YouTubeChannel[], existingVideos: YouTubeVideo[]) => {
     const active = targetChannels.filter(c => c.isActive);
     if (active.length === 0) return [];
@@ -68,7 +68,7 @@ function AppContent() {
           if (existsIdx >= 0) {
             updatedList[existsIdx] = {
               ...v,
-              isSummarized: updatedList[existsIdx].isSummarized,
+              isSummarized: updatedList[existsIdx].isSummarized || v.isSummarized,
               summary: updatedList[existsIdx].summary || v.summary,
               isBookmarked: updatedList[existsIdx].isBookmarked
             };
@@ -79,8 +79,7 @@ function AppContent() {
       }
     }
 
-    // STRICT 24-HOUR FILTER & PURGE:
-    // Remove videos older than 24 hours (diffHours > 24.0) and keep valid channel IDs
+    // Filter valid channels and retain within 72 hours with fresh timeStatus
     const validChannelIds = new Set(targetChannels.map(c => c.channelId));
     const validTitles = new Set(targetChannels.map(c => c.title));
     const cleanedList = updatedList
@@ -88,8 +87,7 @@ function AppContent() {
         if (!validChannelIds.has(v.channelId) && !validTitles.has(v.channelTitle)) return false;
         const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
         const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
-        // Exclude older than 24.0 hours
-        return diffHours >= -0.5 && diffHours <= 24.0;
+        return diffHours >= -0.5 && diffHours <= 72.0;
       })
       .map(v => {
         const timeStatus = calculateVideoTimeStatus(v.publishedAt, nowEpoch);
@@ -98,7 +96,7 @@ function AppContent() {
           isWithin24h: timeStatus.isWithin24h,
           isToday: timeStatus.isToday,
           isYesterday: timeStatus.isYesterday,
-          relativeTimeText: timeStatus.relativeTimeText
+          relativeTimeText: timeStatus.relativeTimeText || v.relativeTimeText
         };
       })
       .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
@@ -218,49 +216,74 @@ function AppContent() {
     }
 
     setIsProcessing24h(true);
-    showToast('최근 24시간 업로드 영상 새로고침 및 Gemini AI 요약을 진행합니다...', 'info');
+    showToast('실시간 채널 최신 영상(오늘/24H/전일)을 검색하고 Gemini AI 요약을 진행합니다...', 'info');
 
     try {
-      // Step A: Search / Fetch latest videos strictly within 24 hours
-      let fresh24hVideos: YouTubeVideo[] = [];
+      // Step A: Search / Fetch latest videos from active channels
+      let freshVideos: YouTubeVideo[] = [];
       const searchResult = await searchAndSummarize24hVideos(activeChannels);
       
       if (searchResult && Array.isArray(searchResult.videos) && searchResult.videos.length > 0) {
-        fresh24hVideos = searchResult.videos;
+        freshVideos = searchResult.videos;
       } else {
         // Fallback to syncChannelVideos
-        fresh24hVideos = await syncChannelVideos(channels, videos);
+        freshVideos = await syncChannelVideos(channels, videos);
       }
 
-      // Strict 24h Filter: Purge any video older than 24 hours & preserve existing summaries
+      // Merge fresh videos with existing videos (preserving AI summaries and bookmarks)
       const nowEpoch = Date.now();
-      const valid24hOnly = fresh24hVideos
+      let mergedMap = new Map<string, YouTubeVideo>();
+
+      // Put existing videos in map first
+      for (const ex of videos) {
+        mergedMap.set(ex.videoId, ex);
+      }
+
+      // Overwrite/insert fresh videos
+      for (const f of freshVideos) {
+        const existing = mergedMap.get(f.videoId);
+        if (existing) {
+          mergedMap.set(f.videoId, {
+            ...f,
+            isSummarized: f.isSummarized || existing.isSummarized,
+            summary: f.summary || existing.summary,
+            isBookmarked: existing.isBookmarked
+          });
+        } else {
+          mergedMap.set(f.videoId, f);
+        }
+      }
+
+      // Clean list: keep within 72 hours and calculate fresh time status
+      const validChannelsSet = new Set(channels.map(c => c.channelId));
+      const validTitlesSet = new Set(channels.map(c => c.title));
+
+      const cleanedList = Array.from(mergedMap.values())
         .filter(v => {
+          if (!validChannelsSet.has(v.channelId) && !validTitlesSet.has(v.channelTitle)) return false;
           const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
           const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
-          return diffHours >= -0.5 && diffHours <= 24.0;
+          return diffHours >= -0.5 && diffHours <= 72.0;
         })
         .map(v => {
-          const existing = videos.find(e => e.videoId === v.videoId);
-          if (existing) {
-            return {
-              ...v,
-              isSummarized: v.isSummarized || existing.isSummarized,
-              summary: v.summary || existing.summary,
-              isBookmarked: existing.isBookmarked
-            };
-          }
-          return v;
+          const timeStatus = calculateVideoTimeStatus(v.publishedAt, nowEpoch);
+          return {
+            ...v,
+            isWithin24h: timeStatus.isWithin24h,
+            isToday: timeStatus.isToday,
+            isYesterday: timeStatus.isYesterday,
+            relativeTimeText: timeStatus.relativeTimeText || v.relativeTimeText
+          };
         });
 
-      // Step B: Automatically perform AI Summary for unsummarized 24h videos
-      const unsummarized = valid24hOnly.filter(v => !v.isSummarized || !v.summary);
-      let updatedVideosList = [...valid24hOnly];
+      // Step B: Automatically perform AI Summary for unsummarized videos (prioritizing today/24h)
+      const unsummarized = cleanedList.filter(v => !v.isSummarized || !v.summary);
+      let updatedVideosList = [...cleanedList];
 
       if (unsummarized.length > 0) {
-        showToast(`새로 수집된 ${unsummarized.length}건의 영상을 Gemini AI로 순차 분석 중...`, 'info');
+        showToast(`새로 수집된 ${unsummarized.length}건의 영상을 Gemini AI로 자동 분석 중...`, 'info');
         
-        // Summarize up to 10 latest videos concurrently or in small chunks
+        // Summarize up to 8 unsummarized videos concurrently
         const summarizePromises = unsummarized.slice(0, 8).map(async (v) => {
           try {
             const res = await fetch('/api/youtube/analyze-video', {
@@ -306,18 +329,21 @@ function AppContent() {
       // Sort newest first
       updatedVideosList.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
 
-      // Save strictly 24h videos to state and localStorage
+      // Save to state and storage
       updateVideos(updatedVideosList);
 
+      const todayCount = updatedVideosList.filter(v => v.isToday).length;
+      const within24Count = updatedVideosList.filter(v => v.isWithin24h).length;
       const totalSummarized = updatedVideosList.filter(v => v.isSummarized).length;
+
       if (updatedVideosList.length > 0) {
-        showToast(`최근 24시간 영상 ${updatedVideosList.length}건 새로고침 및 ${totalSummarized}건 AI 요약 완료! (24시간 이전 영상 자동 정리됨)`, 'success');
+        showToast(`영상 새로고침 완료! 오늘(당일) ${todayCount}건, 24시간 이내 ${within24Count}건, AI 요약 ${totalSummarized}건 반영`, 'success');
       } else {
-        showToast('등록된 채널에서 최근 24시간 이내에 업로드된 새로운 영상이 없습니다.', 'info');
+        showToast('등록된 채널에서 최근 업로드된 새로운 영상을 찾지 못했습니다.', 'info');
       }
     } catch (e) {
       console.error('Error during refresh & summarize:', e);
-      showToast('24시간 영상 새로고침 및 요약 중 오류가 발생했습니다.', 'error');
+      showToast('영상 새로고침 및 요약 중 오류가 발생했습니다.', 'error');
     } finally {
       setIsProcessing24h(false);
     }

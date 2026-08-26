@@ -1,5 +1,6 @@
 import { YouTubeChannel, YouTubeVideo, DailyReport, AppSettings } from '../types';
 import { DEFAULT_CHANNELS } from '../data/defaultChannels';
+import { calculateVideoTimeStatus } from './youtubeService';
 
 const CHANNELS_KEY = 'yt_summary_channels_v1';
 const VIDEOS_KEY = 'yt_summary_videos_v1';
@@ -51,6 +52,30 @@ export function loadChannels(): YouTubeChannel[] {
         }
         if (handle.includes('%')) {
           try { handle = decodeURIComponent(handle); hasChanges = true; } catch {}
+        }
+
+        // 삼프로TV specific heal
+        if (
+          title.includes('삼프로') || 
+          handle.includes('sampro') || 
+          handle.includes('3pro') ||
+          channelId === 'UChLrzhoZhnngiCE0n6P97vg'
+        ) {
+          if (channelId !== 'UChlv4GSd7OQl3js-jkLOnFA') {
+            channelId = 'UChlv4GSd7OQl3js-jkLOnFA';
+            hasChanges = true;
+          }
+          if (title !== '삼프로TV 3PROTV') {
+            title = '삼프로TV 3PROTV';
+            hasChanges = true;
+          }
+          if (handle !== '@3protv') {
+            handle = '@3protv';
+            hasChanges = true;
+          }
+          thumbnailUrl = 'https://yt3.googleusercontent.com/ytc/AIdro_n4L5P-s8v=s900-c-k-c0x00ffffff-no-rj';
+          category = '경제/재테크';
+          subscriberCount = '250만명';
         }
 
         // TTimesTV specific heal
@@ -149,16 +174,26 @@ export function loadVideos(): YouTubeVideo[] {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
       const nowEpoch = Date.now();
-      // Strictly purge any legacy mock/fake videos and videos older than 24 hours
-      const validOnly = parsed.filter(v => {
-        if (!v || typeof v.videoId !== 'string' || !isRealYouTubeVideoId(v.videoId)) return false;
-        if (v.id?.startsWith('vid-') || v.videoId.includes('shuka_') || v.videoId.includes('jocoding_') || v.videoId.includes('mock')) return false;
-        
-        // Strict 24-hour expiration check: delete if older than 24.0 hours
-        const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
-        const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
-        return diffHours >= -0.5 && diffHours <= 24.0;
-      });
+      // Keep real YouTube videos within 72 hours (covering today, within 24h, and yesterday)
+      const validOnly = parsed
+        .filter(v => {
+          if (!v || typeof v.videoId !== 'string' || !isRealYouTubeVideoId(v.videoId)) return false;
+          if (v.id?.startsWith('vid-') || v.videoId.includes('shuka_') || v.videoId.includes('jocoding_') || v.videoId.includes('mock')) return false;
+          
+          const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
+          const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
+          return diffHours >= -0.5 && diffHours <= 72.0;
+        })
+        .map(v => {
+          const timeStatus = calculateVideoTimeStatus(v.publishedAt || v.createdAt || new Date().toISOString(), nowEpoch);
+          return {
+            ...v,
+            isWithin24h: timeStatus.isWithin24h,
+            isToday: timeStatus.isToday,
+            isYesterday: timeStatus.isYesterday,
+            relativeTimeText: timeStatus.relativeTimeText || v.relativeTimeText
+          };
+        });
 
       if (validOnly.length !== parsed.length) {
         saveVideos(validOnly);
@@ -175,12 +210,12 @@ export function loadVideos(): YouTubeVideo[] {
 export function saveVideos(videos: YouTubeVideo[]): void {
   try {
     const nowEpoch = Date.now();
-    // Enforce 24-hour retention constraint
+    // Retain up to 72 hours to allow viewing today, 24h, and yesterday videos
     const filtered = videos.filter(v => {
       if (!v || typeof v.videoId !== 'string') return false;
       const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
       const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
-      return diffHours >= -0.5 && diffHours <= 24.0;
+      return diffHours >= -0.5 && diffHours <= 72.0;
     });
     localStorage.setItem(VIDEOS_KEY, JSON.stringify(filtered));
   } catch (e) {

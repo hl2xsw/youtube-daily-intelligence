@@ -81,6 +81,42 @@ export function checkIsToday(pubDateStr: string): boolean {
   return calculateVideoTimeStatus(pubDateStr).isToday;
 }
 
+// Format publication date in Korean Standard Time (KST / Asia/Seoul)
+export function formatVideoKstDate(pubDateIso: string, includeTime: boolean = true): string {
+  if (!pubDateIso) return '';
+  const d = new Date(pubDateIso);
+  if (isNaN(d.getTime())) return '';
+
+  try {
+    const options: Intl.DateTimeFormatOptions = {
+      timeZone: 'Asia/Seoul',
+      month: 'long',
+      day: 'numeric',
+      weekday: 'short',
+      ...(includeTime ? { hour: '2-digit', minute: '2-digit', hour12: true } : {})
+    };
+    return d.toLocaleString('ko-KR', options);
+  } catch (e) {
+    return d.toLocaleString('ko-KR');
+  }
+}
+
+// Get current date formatted in KST (e.g. "2026년 8월 26일 (수)")
+export function getCurrentKstDateFormatted(): string {
+  const d = new Date();
+  try {
+    return d.toLocaleDateString('ko-KR', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      weekday: 'short'
+    });
+  } catch (e) {
+    return d.toLocaleDateString('ko-KR');
+  }
+}
+
 // Parse YouTube RSS XML string into YouTubeVideo objects
 export function parseYouTubeRssXml(
   feedXml: string,

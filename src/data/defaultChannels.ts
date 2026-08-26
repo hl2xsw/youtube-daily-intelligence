@@ -2,6 +2,54 @@ import { YouTubeChannel } from '../types';
 
 export const DEFAULT_CHANNELS: YouTubeChannel[] = [
   {
+    id: 'ch-sampro',
+    channelId: 'UChlv4GSd7OQl3js-jkLOnFA',
+    title: '삼프로TV 3PROTV',
+    handle: '@3protv',
+    description: '국내외 거시경제 분석, 글로벌 증시 및 기업 심층 브리핑',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_n4L5P-s8v=s900-c-k-c0x00ffffff-no-rj',
+    category: '경제/재테크',
+    isActive: true,
+    subscriberCount: '250만명',
+    addedAt: new Date().toISOString()
+  },
+  {
+    id: 'ch-sbsnews',
+    channelId: 'UCkinYTS9IHqOEwR1Sze2JTw',
+    title: 'SBS 뉴스',
+    handle: '@sbsnews8',
+    description: '대한민국 No.1 SBS뉴스 공식 채널입니다. 실시간 주요 속보 및 심층 보도',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/SqFZwlQcqLs4JMZd3lthkg79kCHi68eerNpkkahvEYSPWhm2afUNqFkbMC6J6JJcy9JJ_DzQ8w=s900-c-k-c0x00ffffff-no-rj',
+    category: '뉴스/시사',
+    isActive: true,
+    subscriberCount: '527만명',
+    addedAt: new Date().toISOString()
+  },
+  {
+    id: 'ch-mbcnews',
+    channelId: 'UCF4Wxdo3inmxP-Y59wXDsFw',
+    title: 'MBCNEWS',
+    handle: '@MBCNEWS11',
+    description: '세상과 소통하는 시간, MBC 뉴스 공식 유튜브 채널',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_nKpBrT7zzqTfdlfUHzw60wMU5KqV-kBmiFjU9dvMI8ePo=s900-c-k-c0x00ffffff-no-rj',
+    category: '뉴스/시사',
+    isActive: true,
+    subscriberCount: '480만명',
+    addedAt: new Date().toISOString()
+  },
+  {
+    id: 'ch-ytn',
+    channelId: 'UChlgI3UHCOnwUGzWzbJ3H5w',
+    title: 'YTN',
+    handle: '@ytnnews24',
+    description: '대한민국 24시간 뉴스 전문 채널 YTN 공식 유튜브',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_m8v=s900-c-k-c0x00ffffff-no-rj',
+    category: '뉴스/시사',
+    isActive: true,
+    subscriberCount: '460만명',
+    addedAt: new Date().toISOString()
+  },
+  {
     id: 'ch-shuka',
     channelId: 'UCsJ6RuBiTVWRX156FVbeaGg',
     title: '슈카월드',
@@ -38,18 +86,6 @@ export const DEFAULT_CHANNELS: YouTubeChannel[] = [
     addedAt: new Date().toISOString()
   },
   {
-    id: 'ch-sampro',
-    channelId: 'UChLrzhoZhnngiCE0n6P97vg',
-    title: '삼프로TV_경제의신과함께',
-    handle: '@samprotv',
-    description: '국내외 거시경제 분석, 글로벌 증시 및 기업 심층 브리핑',
-    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_n4L5P-s8v=s900-c-k-c0x00ffffff-no-rj',
-    category: '경제/재테크',
-    isActive: true,
-    subscriberCount: '250만명',
-    addedAt: new Date().toISOString()
-  },
-  {
     id: 'ch-unrealscience',
     channelId: 'UCaAmw_tXQOq6n2yP8vDqFSw',
     title: '안될과학 Unrealscience',
@@ -71,18 +107,6 @@ export const DEFAULT_CHANNELS: YouTubeChannel[] = [
     category: 'IT/테크',
     isActive: true,
     subscriberCount: '51만명',
-    addedAt: new Date().toISOString()
-  },
-  {
-    id: 'ch-sbsnews',
-    channelId: 'UCkinYTS9IHqOEwR1Sze2JTw',
-    title: 'SBS 뉴스',
-    handle: '@sbsnews8',
-    description: '대한민국 No.1 SBS뉴스 공식 채널입니다. 실시간 주요 속보 및 심층 보도',
-    thumbnailUrl: 'https://yt3.googleusercontent.com/SqFZwlQcqLs4JMZd3lthkg79kCHi68eerNpkkahvEYSPWhm2afUNqFkbMC6J6JJcy9JJ_DzQ8w=s900-c-k-c0x00ffffff-no-rj',
-    category: '뉴스/시사',
-    isActive: true,
-    subscriberCount: '527만명',
     addedAt: new Date().toISOString()
   },
   {

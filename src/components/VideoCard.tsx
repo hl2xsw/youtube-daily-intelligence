@@ -16,7 +16,8 @@ import {
   FileCode,
   FileType,
   Lightbulb,
-  Tag
+  Tag,
+  Flame
 } from 'lucide-react';
 import { 
   generateVideoMarkdown, 
@@ -24,6 +25,7 @@ import {
   generateVideoWordDoc, 
   downloadFile 
 } from '../utils/exportUtils';
+import { formatVideoKstDate } from '../utils/youtubeService';
 import { useToast } from './Toast';
 
 interface VideoCardProps {
@@ -47,13 +49,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({
   const [copied, setCopied] = useState(false);
 
   const s = video.summary;
-  const pubDate = new Date(video.publishedAt);
-  const formattedDate = pubDate.toLocaleDateString('ko-KR', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  const formattedDate = formatVideoKstDate(video.publishedAt, true);
 
   // Handle document file save
   const handleSaveDocument = (format: 'markdown' | 'txt' | 'doc') => {
@@ -134,9 +130,14 @@ export const VideoCard: React.FC<VideoCardProps> = ({
           </div>
         </div>
 
-        {/* Badges: Relative Time, Yesterday, Category */}
+        {/* Badges: Today, Relative Time, Yesterday, Category */}
         <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-          {video.relativeTimeText ? (
+          {video.isToday ? (
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300 flex items-center gap-1 shadow-2xs">
+              <Flame className="w-2.5 h-2.5 text-emerald-600 fill-emerald-600" />
+              오늘 {video.relativeTimeText ? `(${video.relativeTimeText})` : ''}
+            </span>
+          ) : video.relativeTimeText ? (
             <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
               video.isWithin24h 
                 ? 'bg-amber-100 text-amber-900 border border-amber-300' 
@@ -144,7 +145,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({
                 ? 'bg-slate-900 text-white' 
                 : 'bg-slate-100 text-slate-700 border border-slate-200'
             }`}>
-              {video.relativeTimeText}
+              {video.isYesterday ? `어제 (${video.relativeTimeText})` : video.relativeTimeText}
             </span>
           ) : video.isYesterday ? (
             <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-900 text-white">
