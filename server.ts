@@ -596,7 +596,8 @@ function calculateVideoTimeStatus(pubDateIso: string, nowEpoch: number = Date.no
   isRecent3Days: boolean;
   relativeTimeText: string;
 } {
-  const pubTime = new Date(pubDateIso).getTime();
+  const parsedDate = new Date(pubDateIso);
+  const pubTime = isNaN(parsedDate.getTime()) ? nowEpoch : parsedDate.getTime();
   const diffMs = nowEpoch - pubTime;
   const diffMinutes = Math.floor(diffMs / (1000 * 60));
   const diffHours = diffMs / (1000 * 60 * 60);
@@ -634,11 +635,11 @@ function calculateVideoTimeStatus(pubDateIso: string, nowEpoch: number = Date.no
     yesterdayKst.getUTCMonth() === pubKst.getUTCMonth() &&
     yesterdayKst.getUTCDate() === pubKst.getUTCDate();
 
-  // isToday: exact same calendar day in KST OR published within past 16 hours
-  const isToday = isSameDayKst || (diffHours >= -0.5 && diffHours < 16.0);
-  // isYesterday: previous calendar day in KST OR published between 16h and 48h
-  const isYesterday = !isToday && (isYesterdayDayKst || (diffHours >= 16.0 && diffHours <= 48.0));
-  const isRecent3Days = diffHours <= 72.0;
+  // isToday: exact same calendar day in KST OR published within past 18 hours
+  const isToday = isSameDayKst || (diffHours >= -0.5 && diffHours < 18.0);
+  // isYesterday: previous calendar day in KST OR published between 18h and 48h
+  const isYesterday = !isToday && (isYesterdayDayKst || (diffHours >= 18.0 && diffHours <= 48.0));
+  const isRecent3Days = diffHours >= -0.5 && diffHours <= 72.0;
 
   return {
     diffHours,

@@ -621,16 +621,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* 5. Results Count Banner */}
       <div className="flex items-center justify-between text-xs text-slate-500 px-0.5">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span>총 <strong className="text-slate-900 font-semibold">{filteredVideos.length}</strong>개의 영상 표시 중</span>
+          {filters.dateFilter === 'today' && (
+            <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-medium rounded border border-emerald-200/80">
+              🔥 오늘(당일) 업로드 필터
+            </span>
+          )}
           {filters.dateFilter === '24hours' && (
             <span className="px-2 py-0.5 bg-amber-50 text-amber-700 font-medium rounded border border-amber-200/80">
-              최근 24시간 필터
+              ⚡ 최근 24시간 필터
             </span>
           )}
           {filters.dateFilter === 'yesterday' && (
             <span className="px-2 py-0.5 bg-slate-100 text-slate-700 font-medium rounded border border-slate-200">
-              전일(어제) 업로드 필터
+              📅 전일(어제) 업로드 필터
             </span>
           )}
         </div>
@@ -657,12 +662,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <Tv2 className="w-6 h-6" />
           </div>
           <h3 className="text-base font-bold text-slate-900">
-            {filters.dateFilter === 'yesterday' || filters.dateFilter === '24hours'
+            {filters.dateFilter === 'today'
+              ? '오늘(당일) 업로드된 영상이 아직 없거나 동기화 대기 중입니다'
+              : filters.dateFilter === '24hours'
               ? '최근 24시간 이내에 업로드된 영상이 아직 없습니다'
+              : filters.dateFilter === 'yesterday'
+              ? '전일(어제) 업로드된 영상이 없습니다'
               : '조건에 일치하는 영상이 없습니다'}
           </h3>
           <p className="text-xs sm:text-sm text-slate-500 mt-1.5 max-w-md mx-auto leading-relaxed">
-            등록된 채널의 실시간 업로드 피드를 즉시 검색하고 Gemini AI로 핵심 내용을 요약해보세요.
+            등록된 채널의 실시간 RSS 업로드 피드를 즉시 검색하고 Gemini AI로 핵심 내용을 요약해보세요.
           </p>
           
           <div className="mt-5 flex items-center justify-center gap-2.5 flex-wrap">
@@ -672,7 +681,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               className="px-4 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-2xs transition-colors inline-flex items-center gap-1.5 disabled:opacity-50"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>{isProcessing ? '24시간 새로고침 & 요약 중...' : '24H 영상 새로고침 & AI 요약'}</span>
+              <span>{isProcessing ? '실시간 새로고침 중...' : '🔥 실시간 최신 영상 가져오기'}</span>
             </button>
             <button
               onClick={() => setFilters(prev => ({ ...prev, dateFilter: 'all' }))}

@@ -273,7 +273,7 @@ export const CHANNEL_PRESET_PACKS = [
         subscriberCount: '340만명'
       },
       {
-        channelId: 'UChLrzhoZhnngiCE0n6P97vg',
+        channelId: 'UChlv4GSd7OQl3js-jkLOnFA',
         title: '삼프로TV_경제의신과함께',
         handle: '@samprotv',
         category: '경제/재테크' as const,

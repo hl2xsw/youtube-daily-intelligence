@@ -51,19 +51,16 @@ function AppContent() {
   // Sync real videos for channels in parallel - retaining up to 72 hours for today, 24h, and yesterday
   const syncChannelVideos = useCallback(async (targetChannels: YouTubeChannel[], existingVideos: YouTubeVideo[]) => {
     const active = targetChannels.filter(c => c.isActive);
-    if (active.length === 0) return [];
+    if (active.length === 0) return existingVideos;
 
     const nowEpoch = Date.now();
     let updatedList = [...existingVideos];
 
-    // Fetch all active channels concurrently
-    const results = await Promise.allSettled(
-      active.map(channel => fetchRealChannelVideos(channel))
-    );
-
-    for (const res of results) {
-      if (res.status === 'fulfilled' && res.value && res.value.length > 0) {
-        for (const v of res.value) {
+    try {
+      // 1. Try unified fast batch endpoint first (<1s for all channels via RSS)
+      const batchRes = await searchAndSummarize24hVideos(active, false);
+      if (batchRes && batchRes.videos && batchRes.videos.length > 0) {
+        for (const v of batchRes.videos) {
           const existsIdx = updatedList.findIndex(e => e.videoId === v.videoId);
           if (existsIdx >= 0) {
             updatedList[existsIdx] = {
@@ -76,7 +73,31 @@ function AppContent() {
             updatedList = [v, ...updatedList];
           }
         }
+      } else {
+        // Fallback: per-channel fetch
+        const results = await Promise.allSettled(
+          active.map(channel => fetchRealChannelVideos(channel))
+        );
+        for (const res of results) {
+          if (res.status === 'fulfilled' && res.value && res.value.length > 0) {
+            for (const v of res.value) {
+              const existsIdx = updatedList.findIndex(e => e.videoId === v.videoId);
+              if (existsIdx >= 0) {
+                updatedList[existsIdx] = {
+                  ...v,
+                  isSummarized: updatedList[existsIdx].isSummarized || v.isSummarized,
+                  summary: updatedList[existsIdx].summary || v.summary,
+                  isBookmarked: updatedList[existsIdx].isBookmarked
+                };
+              } else {
+                updatedList = [v, ...updatedList];
+              }
+            }
+          }
+        }
       }
+    } catch (e) {
+      console.warn('Sync videos error:', e);
     }
 
     // Filter valid channels and retain within 72 hours with fresh timeStatus
@@ -274,22 +295,27 @@ function AppContent() {
             isYesterday: timeStatus.isYesterday,
             relativeTimeText: timeStatus.relativeTimeText || v.relativeTimeText
           };
-        });
+        })
+        .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+
+      // Immediately render the fresh video list to the UI without waiting for AI analysis
+      updateVideos(cleanedList);
 
       // Step B: Automatically perform AI Summary for unsummarized videos (prioritizing today/24h)
-      const unsummarized = cleanedList.filter(v => !v.isSummarized || !v.summary);
+      const unsummarized = cleanedList.filter(v => (!v.isSummarized || !v.summary) && (v.isToday || v.isWithin24h));
       let updatedVideosList = [...cleanedList];
 
       if (unsummarized.length > 0) {
-        showToast(`새로 수집된 ${unsummarized.length}건의 영상을 Gemini AI로 자동 분석 중...`, 'info');
+        showToast(`수집된 ${unsummarized.length}건의 주요 영상을 Gemini AI로 자동 분석 중...`, 'info');
         
-        // Summarize up to 8 unsummarized videos concurrently
-        const summarizePromises = unsummarized.slice(0, 8).map(async (v) => {
+        // Summarize up to 6 unsummarized videos concurrently
+        const summarizePromises = unsummarized.slice(0, 6).map(async (v) => {
           try {
             const res = await fetch('/api/youtube/analyze-video', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
+                videoId: v.videoId,
                 videoTitle: v.title,
                 videoDescription: v.description,
                 channelTitle: v.channelTitle,
@@ -304,6 +330,8 @@ function AppContent() {
                   ...v,
                   isSummarized: true,
                   summary: data.summary,
+                  fullDescription: data.fullDescription || v.description,
+                  transcript: data.transcript || '',
                   category: (data.summary.category as VideoCategory) || v.category
                 };
               }

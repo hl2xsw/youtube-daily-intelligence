@@ -10,7 +10,8 @@ export function calculateVideoTimeStatus(pubDateIso: string, nowEpoch: number = 
   isRecent3Days: boolean;
   relativeTimeText: string;
 } {
-  const pubTime = new Date(pubDateIso).getTime();
+  const parsedDate = new Date(pubDateIso);
+  const pubTime = isNaN(parsedDate.getTime()) ? nowEpoch : parsedDate.getTime();
   const diffMs = nowEpoch - pubTime;
   const diffMinutes = Math.floor(diffMs / (1000 * 60));
   const diffHours = diffMs / (1000 * 60 * 60);
@@ -50,10 +51,10 @@ export function calculateVideoTimeStatus(pubDateIso: string, nowEpoch: number = 
     yesterdayKst.getUTCMonth() === pubKst.getUTCMonth() &&
     yesterdayKst.getUTCDate() === pubKst.getUTCDate();
 
-  const isToday = isSameDayKst || (diffHours >= -0.5 && diffHours < 16);
-  // Strict Yesterday: must NOT be today, and must be between 16h~48h or 1 calendar day prior
-  const isYesterday = !isToday && (isYesterdayDayKst || (diffHours >= 16 && diffHours <= 48.0));
-  const isRecent3Days = diffHours <= 72.0;
+  const isToday = isSameDayKst || (diffHours >= -0.5 && diffHours < 18.0);
+  // Strict Yesterday: must NOT be today, and must be between 18h~48h or 1 calendar day prior
+  const isYesterday = !isToday && (isYesterdayDayKst || (diffHours >= 18.0 && diffHours <= 48.0));
+  const isRecent3Days = diffHours >= -0.5 && diffHours <= 72.0;
 
   return {
     diffHours,
@@ -274,15 +275,21 @@ export async function fetchRealChannelVideos(channel: YouTubeChannel): Promise<Y
 }
 
 // 24H Video Search and Instant AI Summarization
-export async function searchAndSummarize24hVideos(channels: YouTubeChannel[]): Promise<{
+export async function searchAndSummarize24hVideos(
+  channels: YouTubeChannel[],
+  autoSummarize: boolean = false
+): Promise<{
   videos: YouTubeVideo[];
   within24hCount: number;
+  todayCount: number;
   yesterdayCount: number;
 }> {
   const activeChannels = channels.filter(c => c.isActive);
   if (activeChannels.length === 0) {
-    return { videos: [], within24hCount: 0, yesterdayCount: 0 };
+    return { videos: [], within24hCount: 0, todayCount: 0, yesterdayCount: 0 };
   }
+
+  const nowEpoch = Date.now();
 
   try {
     const res = await fetch('/api/youtube/search-24h-videos', {
@@ -290,17 +297,29 @@ export async function searchAndSummarize24hVideos(channels: YouTubeChannel[]): P
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         channels: activeChannels,
-        autoSummarize: true
+        autoSummarize
       })
     });
 
     if (res.ok) {
       const data = await res.json();
       if (data.success && Array.isArray(data.videos)) {
+        const freshVideos = data.videos.map((v: any) => {
+          const timeStatus = calculateVideoTimeStatus(v.publishedAt, nowEpoch);
+          return {
+            ...v,
+            isWithin24h: timeStatus.isWithin24h,
+            isToday: timeStatus.isToday,
+            isYesterday: timeStatus.isYesterday,
+            relativeTimeText: timeStatus.relativeTimeText || v.relativeTimeText
+          };
+        });
+
         return {
-          videos: data.videos,
-          within24hCount: data.within24hCount || 0,
-          yesterdayCount: data.yesterdayCount || 0
+          videos: freshVideos,
+          within24hCount: freshVideos.filter(v => v.isWithin24h).length,
+          todayCount: freshVideos.filter(v => v.isToday).length,
+          yesterdayCount: freshVideos.filter(v => v.isYesterday).length
         };
       }
     }
@@ -318,6 +337,7 @@ export async function searchAndSummarize24hVideos(channels: YouTubeChannel[]): P
   return {
     videos: allVideos,
     within24hCount: allVideos.filter(v => v.isWithin24h).length,
+    todayCount: allVideos.filter(v => v.isToday).length,
     yesterdayCount: allVideos.filter(v => v.isYesterday).length
   };
 }
