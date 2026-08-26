@@ -678,7 +678,7 @@ function parseRelativeTimeTextToIso(timeAgoStr: string, nowEpoch: number = Date.
   return new Date(nowEpoch).toISOString();
 }
 
-// Universal YouTube Channel Video Extractor (RSS First for real-time exact metadata + HTML Scraping for streams & tabs)
+// Universal YouTube Channel Video Extractor (Multi-Source: Live /videos Scraping + Recent Search Filter + RSS Feed)
 async function fetchVideosForChannelUniversal(ch: {
   channelId?: string;
   handle?: string;
@@ -706,71 +706,15 @@ async function fetchVideosForChannelUniversal(ch: {
 
   const nowEpoch = Date.now();
   const videoMap = new Map<string, any>();
+  const fetchHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Cookie': 'SOCS=CAISNQgDEitib3FfaWRlbnRpdHlmc2J1aWxkdG9vbHNsYXVkZXJfc2VydmVyXzIwMjQwMjI1LjA1X3AwGgJrbxACGgJrbw; YSC=a; GPS=1',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache'
+  };
 
-  // 1. PRIMARY SOURCE: Official YouTube RSS Feed (Fastest, 100% reliable, second-precision ISO timestamps)
-  if (targetChannelId && targetChannelId.startsWith('UC') && !targetChannelId.startsWith('UC_')) {
-    try {
-      const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(targetChannelId)}&_t=${nowEpoch}`;
-      const rssRes = await fetch(rssUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache'
-        }
-      });
-
-      if (rssRes.ok) {
-        const feedXml = await rssRes.text();
-        if (feedXml.includes('<entry>')) {
-          const entries = feedXml.split('<entry>').slice(1);
-          for (const entry of entries) {
-            const videoIdMatch = entry.match(/<yt:videoId>([^<]+)<\/yt:videoId>/);
-            const titleMatch = entry.match(/<title>([^<]+)<\/title>/);
-            const publishedMatch = entry.match(/<published>([^<]+)<\/published>/);
-            const descMatch = entry.match(/<media:description>([^<]*)<\/media:description>/s);
-            const thumbMatch = entry.match(/<media:thumbnail url="([^"]+)"/);
-            const viewsMatch = entry.match(/<media:statistics views="(\d+)"/);
-
-            if (videoIdMatch && titleMatch && publishedMatch) {
-              const videoId = videoIdMatch[1].trim();
-              const pubDateIso = new Date(publishedMatch[1]).toISOString();
-              const timeStatus = calculateVideoTimeStatus(pubDateIso, nowEpoch);
-
-              // If only24h is true, strictly exclude videos older than 24 hours (diffHours > 24.0)
-              if (only24h && !timeStatus.isWithin24h) {
-                continue;
-              }
-
-              videoMap.set(videoId, {
-                id: `yt-${videoId}`,
-                videoId,
-                channelId: targetChannelId,
-                channelTitle: channelTitle || 'YouTube Channel',
-                channelThumbnail: ch.thumbnailUrl,
-                title: titleMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
-                description: descMatch ? descMatch[1].trim() : `${channelTitle} 영상`,
-                thumbnailUrl: thumbMatch ? thumbMatch[1] : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-                publishedAt: pubDateIso,
-                videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
-                category: ch.category || '기타',
-                viewCount: viewsMatch ? parseInt(viewsMatch[1], 10) : undefined,
-                isYesterday: timeStatus.isYesterday,
-                isWithin24h: timeStatus.isWithin24h,
-                isToday: timeStatus.isToday,
-                relativeTimeText: timeStatus.relativeTimeText,
-                isSummarized: false,
-                createdAt: pubDateIso
-              });
-            }
-          }
-        }
-      }
-    } catch (rssErr) {
-      console.warn(`RSS feed fetch failed for ${channelTitle}:`, rssErr);
-    }
-  }
-
-  // 2. SECONDARY SOURCE: YouTube /videos and /streams tabs (Captures latest breaking news clips and livestreams)
+  // 1. PRIMARY SOURCE: Direct Channel /videos and /streams tab scraping (Captures real-time newest clips from today)
   const urlsToScrape: string[] = [];
   if (targetHandle) {
     const cleanH = targetHandle.startsWith('@') ? targetHandle : `@${targetHandle}`;
@@ -783,62 +727,51 @@ async function fetchVideosForChannelUniversal(ch: {
   }
 
   for (const pageUrl of urlsToScrape) {
-    // If we already collected plenty of recent videos, we don't need excessive scraping
     if (videoMap.size >= 30) break;
 
     try {
-      const resp = await fetch(pageUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache'
-        }
-      });
-
+      const resp = await fetch(pageUrl, { headers: fetchHeaders });
       if (resp.ok) {
         const html = await resp.text();
         const match = html.match(/var ytInitialData = ({.*?});<\/script>/s) || html.match(/ytInitialData\s*=\s*({.+?});/s);
         if (match) {
           try {
             const data = JSON.parse(match[1]);
-
             const traverse = (node: any) => {
               if (!node || typeof node !== 'object') return;
 
-              // 2-1. lockupViewModel (2025/2026 YouTube format)
+              // 1-1. lockupViewModel (YouTube 2025/2026 standard format)
               if (node.lockupViewModel) {
                 const lvm = node.lockupViewModel;
                 const contentId = lvm.contentId;
-                const title = lvm.metadata?.lockupMetadataViewModel?.title?.content;
-                const metadataItems = lvm.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel?.metadataRows;
+                const title = lvm.metadata?.lockupMetadataViewModel?.title?.content || 
+                              lvm.rendererContext?.accessibilityContext?.label || '';
+                const metadataItems = lvm.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel?.metadataRows || [];
+                
                 let viewCountNum: number | undefined;
                 let timeAgo = '';
 
-                if (metadataItems) {
-                  for (const row of metadataItems) {
-                    for (const part of (row.metadataParts || [])) {
-                      const txt = part.text?.content || '';
-                      if (txt.includes('조회수') || txt.includes('views')) {
-                        const numMatch = txt.replace(/,/g, '').match(/\d+/);
-                        if (numMatch) viewCountNum = parseInt(numMatch[0], 10);
-                        if (txt.includes('만')) {
-                          const mMatch = txt.match(/([\d.]+)만/);
-                          if (mMatch) viewCountNum = Math.round(parseFloat(mMatch[1]) * 10000);
-                        } else if (txt.includes('천') || txt.includes('K')) {
-                          const kMatch = txt.match(/([\d.]+)[천K]/i);
-                          if (kMatch) viewCountNum = Math.round(parseFloat(kMatch[1]) * 1000);
-                        }
-                      } else if (txt.includes('전') || txt.includes('ago') || txt.includes('스트리밍') || txt.includes('실시간')) {
-                        timeAgo = txt;
+                for (const row of metadataItems) {
+                  for (const part of (row.metadataParts || [])) {
+                    const txt = part.text?.content || '';
+                    if (txt.includes('조회수') || txt.includes('views')) {
+                      const numMatch = txt.replace(/,/g, '').match(/\d+/);
+                      if (numMatch) viewCountNum = parseInt(numMatch[0], 10);
+                      if (txt.includes('만')) {
+                        const mMatch = txt.match(/([\d.]+)만/);
+                        if (mMatch) viewCountNum = Math.round(parseFloat(mMatch[1]) * 10000);
+                      } else if (txt.includes('천') || txt.includes('K')) {
+                        const kMatch = txt.match(/([\d.]+)[천K]/i);
+                        if (kMatch) viewCountNum = Math.round(parseFloat(kMatch[1]) * 1000);
                       }
+                    } else if (txt.includes('전') || txt.includes('ago') || txt.includes('스트리밍') || txt.includes('실시간')) {
+                      timeAgo = txt;
                     }
                   }
                 }
 
                 if (contentId && title) {
                   if (videoMap.has(contentId)) {
-                    // Enrich existing RSS item with view count if missing
                     const ex = videoMap.get(contentId);
                     if (!ex.viewCount && viewCountNum) ex.viewCount = viewCountNum;
                   } else {
@@ -871,7 +804,7 @@ async function fetchVideosForChannelUniversal(ch: {
                 }
               }
 
-              // 2-2. videoRenderer
+              // 1-2. videoRenderer
               if (node.videoRenderer) {
                 const vr = node.videoRenderer;
                 const videoId = vr.videoId;
@@ -912,7 +845,7 @@ async function fetchVideosForChannelUniversal(ch: {
                 }
               }
 
-              // 2-3. gridVideoRenderer
+              // 1-3. gridVideoRenderer
               if (node.gridVideoRenderer) {
                 const vr = node.gridVideoRenderer;
                 const videoId = vr.videoId;
@@ -960,6 +893,140 @@ async function fetchVideosForChannelUniversal(ch: {
       }
     } catch (scrapeErr) {
       console.warn(`Scraping failed for ${pageUrl}:`, scrapeErr);
+    }
+  }
+
+  // 2. SECONDARY SOURCE: YouTube Search with sort by upload date (sp=CAI%3D) for guaranteed real-time updates
+  if (channelTitle && videoMap.size < 20) {
+    try {
+      const searchUrl = `https://www.youtube.com/results?search_query="${encodeURIComponent(channelTitle)}"&sp=CAI%3D`;
+      const searchRes = await fetch(searchUrl, { headers: fetchHeaders });
+      if (searchRes.ok) {
+        const searchHtml = await searchRes.text();
+        const searchMatch = searchHtml.match(/var ytInitialData = ({.*?});<\/script>/s) || searchHtml.match(/ytInitialData\s*=\s*({.+?});/s);
+        if (searchMatch) {
+          const searchData = JSON.parse(searchMatch[1]);
+          const traverseSearch = (node: any) => {
+            if (!node || typeof node !== 'object') return;
+            if (node.videoRenderer) {
+              const vr = node.videoRenderer;
+              const videoId = vr.videoId;
+              const title = vr.title?.runs?.map((r: any) => r.text).join('') || vr.title?.simpleText || '';
+              const owner = vr.ownerText?.runs?.map((r: any) => r.text).join('') || vr.shortBylineText?.runs?.map((r: any) => r.text).join('') || '';
+              const timeAgo = vr.publishedTimeText?.simpleText || '';
+              const browseId = vr.ownerText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || '';
+
+              // Match video to this channel by owner name or browseId
+              const isMatch = (browseId && browseId === targetChannelId) ||
+                              owner.includes(channelTitle) ||
+                              channelTitle.includes(owner) ||
+                              (targetHandle && owner.toLowerCase().includes(targetHandle.replace('@', '').toLowerCase()));
+
+              if (videoId && title && isMatch && !videoMap.has(videoId)) {
+                const pubDateIso = parseRelativeTimeTextToIso(timeAgo, nowEpoch);
+                const timeStatus = calculateVideoTimeStatus(pubDateIso, nowEpoch);
+
+                if (!only24h || timeStatus.isWithin24h) {
+                  videoMap.set(videoId, {
+                    id: `yt-${videoId}`,
+                    videoId,
+                    channelId: targetChannelId || browseId || `ch-${videoId}`,
+                    channelTitle: channelTitle || owner || 'YouTube Channel',
+                    channelThumbnail: ch.thumbnailUrl,
+                    title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+                    description: `${channelTitle} 실시간 최신 뉴스 및 영상`,
+                    thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+                    publishedAt: pubDateIso,
+                    videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
+                    category: ch.category || '기타',
+                    isYesterday: timeStatus.isYesterday,
+                    isWithin24h: timeStatus.isWithin24h,
+                    isToday: timeStatus.isToday,
+                    relativeTimeText: timeAgo || timeStatus.relativeTimeText,
+                    isSummarized: false,
+                    createdAt: pubDateIso
+                  });
+                }
+              }
+            }
+            for (const k of Object.keys(node)) traverseSearch(node[k]);
+          };
+          traverseSearch(searchData);
+        }
+      }
+    } catch (searchErr) {
+      console.warn(`YouTube recent search failed for ${channelTitle}:`, searchErr);
+    }
+  }
+
+  // 3. TERTIARY SOURCE: Official YouTube RSS Feed (Provides exact ISO timestamps)
+  if (targetChannelId && targetChannelId.startsWith('UC') && !targetChannelId.startsWith('UC_')) {
+    try {
+      const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(targetChannelId)}&_t=${nowEpoch}`;
+      const rssRes = await fetch(rssUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      });
+
+      if (rssRes.ok) {
+        const feedXml = await rssRes.text();
+        if (feedXml.includes('<entry>')) {
+          const entries = feedXml.split('<entry>').slice(1);
+          for (const entry of entries) {
+            const videoIdMatch = entry.match(/<yt:videoId>([^<]+)<\/yt:videoId>/);
+            const titleMatch = entry.match(/<title>([^<]+)<\/title>/);
+            const publishedMatch = entry.match(/<published>([^<]+)<\/published>/);
+            const descMatch = entry.match(/<media:description>([^<]*)<\/media:description>/s);
+            const thumbMatch = entry.match(/<media:thumbnail url="([^"]+)"/);
+            const viewsMatch = entry.match(/<media:statistics views="(\d+)"/);
+
+            if (videoIdMatch && titleMatch && publishedMatch) {
+              const videoId = videoIdMatch[1].trim();
+              const pubDateIso = new Date(publishedMatch[1]).toISOString();
+              const timeStatus = calculateVideoTimeStatus(pubDateIso, nowEpoch);
+
+              // If video is already in map, enrich with exact ISO timestamp if within 24h
+              if (videoMap.has(videoId)) {
+                const existing = videoMap.get(videoId);
+                existing.publishedAt = pubDateIso;
+                existing.isYesterday = timeStatus.isYesterday;
+                existing.isWithin24h = timeStatus.isWithin24h;
+                existing.isToday = timeStatus.isToday;
+                existing.relativeTimeText = timeStatus.relativeTimeText;
+                if (descMatch && (!existing.description || existing.description.length < 50)) {
+                  existing.description = descMatch[1].trim();
+                }
+              } else if (!only24h || timeStatus.isWithin24h) {
+                videoMap.set(videoId, {
+                  id: `yt-${videoId}`,
+                  videoId,
+                  channelId: targetChannelId,
+                  channelTitle: channelTitle || 'YouTube Channel',
+                  channelThumbnail: ch.thumbnailUrl,
+                  title: titleMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+                  description: descMatch ? descMatch[1].trim() : `${channelTitle} 영상`,
+                  thumbnailUrl: thumbMatch ? thumbMatch[1] : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+                  publishedAt: pubDateIso,
+                  videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
+                  category: ch.category || '기타',
+                  viewCount: viewsMatch ? parseInt(viewsMatch[1], 10) : undefined,
+                  isYesterday: timeStatus.isYesterday,
+                  isWithin24h: timeStatus.isWithin24h,
+                  isToday: timeStatus.isToday,
+                  relativeTimeText: timeStatus.relativeTimeText,
+                  isSummarized: false,
+                  createdAt: pubDateIso
+                });
+              }
+            }
+          }
+        }
+      }
+    } catch (rssErr) {
+      console.warn(`RSS feed fetch failed for ${channelTitle}:`, rssErr);
     }
   }
 
