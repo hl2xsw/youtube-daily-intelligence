@@ -35,8 +35,10 @@ interface DashboardViewProps {
   onBatchAnalyzeYesterday: () => void;
   onRefreshAndSummarize24h: () => void;
   onOpenExportModal: () => void;
+  onQuickAnalyze?: (input: string) => Promise<void>;
   isBatchAnalyzing: boolean;
   isProcessing?: boolean;
+  isQuickAnalyzing?: boolean;
   analyzingVideoId: string | null;
 }
 
@@ -50,12 +52,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onBatchAnalyzeYesterday,
   onRefreshAndSummarize24h,
   onOpenExportModal,
+  onQuickAnalyze,
   isBatchAnalyzing,
   isProcessing = false,
+  isQuickAnalyzing = false,
   analyzingVideoId
 }) => {
   const { showToast } = useToast();
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [quickInput, setQuickInput] = useState('');
 
   const categoryFilterList = useMemo(() => {
     return [
@@ -98,8 +103,46 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     });
   }, [videos]);
 
+  const recent3DaysVideos = useMemo(() => {
+    const now = Date.now();
+    return videos.filter(v => {
+      const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
+      const diffHours = (now - pubTime) / (1000 * 60 * 60);
+      return diffHours <= 72.0;
+    });
+  }, [videos]);
+
   const summarizedCount = useMemo(() => videos.filter(v => v.isSummarized).length, [videos]);
   const activeChannelsCount = useMemo(() => channels.filter(c => c.isActive).length, [channels]);
+
+  // Top Key Topics across summarized today/24h videos
+  const topKeyPoints = useMemo(() => {
+    const activeVids = within24hVideos.filter(v => v.isSummarized && v.summary);
+    const points: { video: YouTubeVideo; text: string; channel: string }[] = [];
+    for (const v of activeVids) {
+      if (v.summary?.keyPoints && v.summary.keyPoints.length > 0) {
+        points.push({
+          video: v,
+          text: v.summary.keyPoints[0],
+          channel: v.channelTitle
+        });
+      }
+      if (points.length >= 3) break;
+    }
+    return points;
+  }, [within24hVideos]);
+
+  const handleQuickSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickInput.trim()) {
+      showToast('분석할 유튜브 URL 또는 키워드를 입력해주세요.', 'info');
+      return;
+    }
+    if (onQuickAnalyze) {
+      onQuickAnalyze(quickInput.trim());
+      setQuickInput('');
+    }
+  };
 
   // Filtered Videos
   const filteredVideos = useMemo(() => {
@@ -312,6 +355,79 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
+      {/* 2.2 Instant Video URL & Topic AI Direct Analyzer */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 p-4 sm:p-5 rounded-xl border border-slate-700 shadow-md text-white">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-amber-400/20 text-amber-300 flex items-center justify-center font-bold">
+              <Sparkles className="w-4 h-4 text-amber-300" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+                실시간 유튜브 영상 URL / 토픽 즉시 AI 심층 분석
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                  직접 분석 기능
+                </span>
+              </h3>
+              <p className="text-xs text-slate-300">
+                특정 영상 링크나 검색어(예: 오늘 증시, 삼프로TV, 엔비디아)를 입력하면 즉시 자막·설명을 분석하여 요약 카드를 생성합니다.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <form onSubmit={handleQuickSubmit} className="flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={quickInput}
+              onChange={(e) => setQuickInput(e.target.value)}
+              placeholder="분석할 유튜브 URL (예: https://youtu.be/... ) 또는 검색어를 입력하세요"
+              disabled={isQuickAnalyzing}
+              className="w-full pl-10 pr-4 py-2 text-xs sm:text-sm bg-slate-950/70 border border-slate-700 rounded-lg text-white placeholder:text-slate-400 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={isQuickAnalyzing || !quickInput.trim()}
+            className="px-5 py-2 text-xs sm:text-sm font-bold bg-amber-400 hover:bg-amber-300 active:bg-amber-500 text-slate-950 rounded-lg shadow transition-all flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
+          >
+            <Sparkles className={`w-3.5 h-3.5 text-slate-950 ${isQuickAnalyzing ? 'animate-spin' : ''}`} />
+            <span>{isQuickAnalyzing ? '영상 추출 & AI 분석 중...' : '⚡ 즉시 AI 분석'}</span>
+          </button>
+        </form>
+      </div>
+
+      {/* 2.3 Today's Executive Intelligence 3-Point Briefing */}
+      {topKeyPoints.length > 0 && (
+        <div className="bg-emerald-950/30 border border-emerald-800/40 rounded-xl p-4 sm:p-5 text-emerald-100 shadow-2xs">
+          <div className="flex items-center gap-2 mb-2.5">
+            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[11px] font-bold border border-emerald-500/30">
+              오늘의 실시간 핵심 브리핑
+            </span>
+            <span className="text-xs text-slate-400 font-medium">최신 24시간 분석 영상 기반 주요 포인트</span>
+          </div>
+          <div className="space-y-2">
+            {topKeyPoints.map((pt, idx) => (
+              <div 
+                key={idx}
+                onClick={() => onOpenDetail(pt.video)}
+                className="flex items-start gap-2.5 p-2 rounded-lg bg-emerald-900/20 hover:bg-emerald-900/40 border border-emerald-700/30 cursor-pointer transition-all text-xs sm:text-sm text-emerald-100 hover:text-white"
+              >
+                <span className="w-5 h-5 rounded bg-emerald-500/30 text-emerald-300 text-xs font-black flex items-center justify-center shrink-0 mt-0.5">
+                  {idx + 1}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <span className="font-semibold text-emerald-300 mr-1.5">[{pt.channel}]</span>
+                  <span>{pt.text}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 2.5 Quick Date Filter Segment */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
         <span className="text-xs font-semibold text-slate-500 shrink-0 mr-1">기간 필터:</span>
@@ -349,6 +465,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         >
           <Clock className="w-3 h-3" />
           전일(어제) ({yesterdayVideos.length})
+        </button>
+
+        <button
+          onClick={() => setFilters(prev => ({ ...prev, dateFilter: 'recent3days' }))}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+            filters.dateFilter === 'recent3days'
+              ? 'bg-slate-900 text-white shadow-2xs'
+              : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/90'
+          }`}
+        >
+          <Calendar className="w-3 h-3" />
+          최근 3일 ({recent3DaysVideos.length})
         </button>
 
         <button

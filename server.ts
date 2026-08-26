@@ -698,7 +698,7 @@ async function fetchVideosForChannelUniversal(ch: {
   title?: string;
   category?: string;
   thumbnailUrl?: string;
-}, only24h: boolean = true): Promise<{ videos: any[]; channelId: string; channelTitle: string }> {
+}, only24h: boolean = false): Promise<{ videos: any[]; channelId: string; channelTitle: string }> {
   let targetChannelId = ch.channelId || '';
   let targetHandle = ch.handle || '';
   let channelTitle = ch.title || '';
@@ -791,7 +791,7 @@ async function fetchVideosForChannelUniversal(ch: {
                     const pubDateIso = parseRelativeTimeTextToIso(timeAgo, nowEpoch);
                     const timeStatus = calculateVideoTimeStatus(pubDateIso, nowEpoch);
 
-                    if (!only24h || timeStatus.isWithin24h) {
+                    if (!only24h || timeStatus.isWithin24h || timeStatus.diffHours <= 72.0) {
                       videoMap.set(contentId, {
                         id: `yt-${contentId}`,
                         videoId: contentId,
@@ -833,7 +833,7 @@ async function fetchVideosForChannelUniversal(ch: {
                     const pubDateIso = parseRelativeTimeTextToIso(timeAgo, nowEpoch);
                     const timeStatus = calculateVideoTimeStatus(pubDateIso, nowEpoch);
 
-                    if (!only24h || timeStatus.isWithin24h) {
+                    if (!only24h || timeStatus.isWithin24h || timeStatus.diffHours <= 72.0) {
                       videoMap.set(videoId, {
                         id: `yt-${videoId}`,
                         videoId,
@@ -869,7 +869,7 @@ async function fetchVideosForChannelUniversal(ch: {
                   const pubDateIso = parseRelativeTimeTextToIso(timeAgo, nowEpoch);
                   const timeStatus = calculateVideoTimeStatus(pubDateIso, nowEpoch);
 
-                  if (!only24h || timeStatus.isWithin24h) {
+                  if (!only24h || timeStatus.isWithin24h || timeStatus.diffHours <= 72.0) {
                     videoMap.set(videoId, {
                       id: `yt-${videoId}`,
                       videoId,
@@ -939,7 +939,7 @@ async function fetchVideosForChannelUniversal(ch: {
                 const pubDateIso = parseRelativeTimeTextToIso(timeAgo, nowEpoch);
                 const timeStatus = calculateVideoTimeStatus(pubDateIso, nowEpoch);
 
-                if (!only24h || timeStatus.isWithin24h) {
+                if (!only24h || timeStatus.isWithin24h || timeStatus.diffHours <= 72.0) {
                   videoMap.set(videoId, {
                     id: `yt-${videoId}`,
                     videoId,
@@ -1012,7 +1012,7 @@ async function fetchVideosForChannelUniversal(ch: {
                 if (descMatch && (!existing.description || existing.description.length < 50)) {
                   existing.description = descMatch[1].trim();
                 }
-              } else if (!only24h || timeStatus.isWithin24h) {
+              } else if (!only24h || timeStatus.isWithin24h || timeStatus.diffHours <= 72.0) {
                 videoMap.set(videoId, {
                   id: `yt-${videoId}`,
                   videoId,
@@ -1569,6 +1569,196 @@ app.post('/api/youtube/video-details', async (req, res) => {
   } catch (error: any) {
     console.error('Video details error:', error);
     res.status(500).json({ error: error.message || '영상 세부 정보를 불러오지 못했습니다.' });
+  }
+});
+
+// 4.6 Quick Direct Video or Search Query Instant Analyzer
+app.post('/api/youtube/quick-analyze', async (req, res) => {
+  try {
+    const { input, category = 'IT/테크', detailLevel = 'standard' } = req.body;
+    if (!input || typeof input !== 'string' || !input.trim()) {
+      return res.status(400).json({ error: '분석할 유튜브 URL 또는 검색어를 입력해주세요.' });
+    }
+
+    const trimmed = input.trim();
+    let targetVideoId = '';
+    let extractedTitle = '';
+    let extractedChannel = '';
+    let extractedThumbnail = '';
+    let extractedDescription = '';
+
+    // Check if input is a direct YouTube URL or Video ID
+    const urlMatch = trimmed.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/i);
+    if (urlMatch) {
+      targetVideoId = urlMatch[1];
+    } else if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
+      targetVideoId = trimmed;
+    }
+
+    const nowEpoch = Date.now();
+
+    if (targetVideoId) {
+      // 1. Direct Video ID extraction
+      try {
+        // Fetch oEmbed for guaranteed clean title and author
+        const oembedRes = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${targetVideoId}&format=json`);
+        if (oembedRes.ok) {
+          const oembed = await oembedRes.json();
+          extractedTitle = oembed.title || '';
+          extractedChannel = oembed.author_name || '';
+          extractedThumbnail = oembed.thumbnail_url || `https://i.ytimg.com/vi/${targetVideoId}/hqdefault.jpg`;
+        }
+      } catch (oeErr) {
+        console.warn('oEmbed fetch fallback:', oeErr);
+      }
+
+      // Fetch deep details and transcript
+      const details = await fetchYouTubeVideoDetailsAndTranscript(targetVideoId);
+      if (!extractedTitle && details.fullDescription) {
+        extractedTitle = details.fullDescription.split('\n')[0].slice(0, 100);
+      }
+      if (!extractedTitle) {
+        extractedTitle = `유튜브 영상 (${targetVideoId})`;
+      }
+      if (!extractedThumbnail) {
+        extractedThumbnail = `https://i.ytimg.com/vi/${targetVideoId}/hqdefault.jpg`;
+      }
+      extractedDescription = details.fullDescription || `${extractedChannel} 채널의 영상입니다.`;
+
+      // Summarize with Gemini
+      const { summary, aiPowered, fullDescription: resolvedDesc, transcript: resolvedTrans } = await summarizeVideoWithGemini(
+        extractedTitle,
+        extractedDescription,
+        extractedChannel,
+        category,
+        detailLevel,
+        targetVideoId,
+        details.transcript,
+        details.fullDescription
+      );
+
+      const pubDateIso = new Date().toISOString();
+      const timeStatus = calculateVideoTimeStatus(pubDateIso, nowEpoch);
+
+      const videoObj = {
+        id: `yt-${targetVideoId}`,
+        videoId: targetVideoId,
+        channelId: `ch-${targetVideoId}`,
+        channelTitle: extractedChannel || 'YouTube Creator',
+        channelThumbnail: extractedThumbnail,
+        title: extractedTitle,
+        description: extractedDescription,
+        fullDescription: resolvedDesc,
+        transcript: resolvedTrans,
+        thumbnailUrl: extractedThumbnail,
+        publishedAt: pubDateIso,
+        videoUrl: `https://www.youtube.com/watch?v=${targetVideoId}`,
+        category: summary.category || category,
+        isYesterday: timeStatus.isYesterday,
+        isWithin24h: true,
+        isToday: true,
+        relativeTimeText: '방금 전 분석됨',
+        isSummarized: true,
+        summary,
+        createdAt: pubDateIso
+      };
+
+      return res.json({ success: true, video: videoObj });
+    } else {
+      // 2. Keyword/Topic Search & Instant Analysis
+      const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(trimmed)}&sp=CAI%3D`;
+      const searchRes = await fetch(searchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
+        }
+      });
+
+      if (!searchRes.ok) {
+        throw new Error('유튜브 검색 결과를 가져올 수 없습니다.');
+      }
+
+      const searchHtml = await searchRes.text();
+      const match = searchHtml.match(/var ytInitialData = ({.*?});<\/script>/s) || searchHtml.match(/ytInitialData\s*=\s*({.+?});/s);
+      if (!match) {
+        throw new Error('검색 데이터 파싱에 실패했습니다.');
+      }
+
+      const searchData = JSON.parse(match[1]);
+      let foundVideo: any = null;
+
+      const traverse = (node: any) => {
+        if (foundVideo || !node || typeof node !== 'object') return;
+        if (node.videoRenderer) {
+          const vr = node.videoRenderer;
+          if (vr.videoId && vr.title) {
+            const title = vr.title?.runs?.map((r: any) => r.text).join('') || vr.title?.simpleText || '';
+            const owner = vr.ownerText?.runs?.map((r: any) => r.text).join('') || vr.shortBylineText?.runs?.map((r: any) => r.text).join('') || '';
+            const timeAgo = vr.publishedTimeText?.simpleText || '';
+            const desc = vr.detailedMetadataSnippets?.[0]?.snippetText?.runs?.map((r: any) => r.text).join('') || '';
+            foundVideo = {
+              videoId: vr.videoId,
+              title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+              channelTitle: owner || 'YouTube Creator',
+              timeAgo,
+              desc
+            };
+          }
+        }
+        for (const k of Object.keys(node)) traverse(node[k]);
+      };
+
+      traverse(searchData);
+
+      if (!foundVideo) {
+        throw new Error(`"${trimmed}" 관련 영상을 찾지 못했습니다.`);
+      }
+
+      // Fetch deep transcript & details
+      const details = await fetchYouTubeVideoDetailsAndTranscript(foundVideo.videoId);
+      const pubDateIso = parseRelativeTimeTextToIso(foundVideo.timeAgo, nowEpoch);
+      const timeStatus = calculateVideoTimeStatus(pubDateIso, nowEpoch);
+
+      // Summarize with Gemini
+      const { summary, aiPowered, fullDescription: resolvedDesc, transcript: resolvedTrans } = await summarizeVideoWithGemini(
+        foundVideo.title,
+        details.fullDescription || foundVideo.desc,
+        foundVideo.channelTitle,
+        category,
+        detailLevel,
+        foundVideo.videoId,
+        details.transcript,
+        details.fullDescription
+      );
+
+      const videoObj = {
+        id: `yt-${foundVideo.videoId}`,
+        videoId: foundVideo.videoId,
+        channelId: `ch-${foundVideo.videoId}`,
+        channelTitle: foundVideo.channelTitle,
+        channelThumbnail: `https://i.ytimg.com/vi/${foundVideo.videoId}/hqdefault.jpg`,
+        title: foundVideo.title,
+        description: details.fullDescription || foundVideo.desc || `${foundVideo.channelTitle} 영상`,
+        fullDescription: resolvedDesc,
+        transcript: resolvedTrans,
+        thumbnailUrl: `https://i.ytimg.com/vi/${foundVideo.videoId}/hqdefault.jpg`,
+        publishedAt: pubDateIso,
+        videoUrl: `https://www.youtube.com/watch?v=${foundVideo.videoId}`,
+        category: summary.category || category,
+        isYesterday: timeStatus.isYesterday,
+        isWithin24h: timeStatus.isWithin24h,
+        isToday: timeStatus.isToday,
+        relativeTimeText: foundVideo.timeAgo || timeStatus.relativeTimeText,
+        isSummarized: true,
+        summary,
+        createdAt: pubDateIso
+      };
+
+      return res.json({ success: true, video: videoObj });
+    }
+  } catch (error: any) {
+    console.error('Quick analyze error:', error);
+    res.status(500).json({ error: error.message || '영상 실시간 분석에 실패했습니다.' });
   }
 });
 

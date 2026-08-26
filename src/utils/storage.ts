@@ -129,6 +129,23 @@ export function loadChannels(): YouTubeChannel[] {
           hasChanges = true;
         }
 
+        // Unrealscience / 안될과학 specific heal
+        if (
+          title.includes('안될과학') || 
+          handle.includes('unreal') || 
+          channelId === 'UCaAmw_tXQOq6n2yP8vDqFSw'
+        ) {
+          if (channelId !== 'UCMc4EmuDxnHPc6pgGW-QWvQ') {
+            channelId = 'UCMc4EmuDxnHPc6pgGW-QWvQ';
+            hasChanges = true;
+          }
+          title = '안될과학 Unrealscience';
+          handle = '@unrealscience';
+          category = '과학/지식';
+          subscriberCount = '115만명';
+          hasChanges = true;
+        }
+
         return {
           ...ch,
           channelId,

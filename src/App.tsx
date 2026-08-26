@@ -534,6 +534,49 @@ function AppContent() {
     }
   };
 
+  // 4.5 Quick Single Video / Search Query Direct Instant AI Analysis
+  const [isQuickAnalyzing, setIsQuickAnalyzing] = useState(false);
+
+  const handleQuickAnalyze = async (input: string) => {
+    if (!input.trim()) return;
+    setIsQuickAnalyzing(true);
+    showToast(`"${input.slice(0, 25)}..." 실시간 정보를 추출하고 Gemini AI 심층 분석을 시작합니다...`, 'info');
+
+    try {
+      const res = await fetch('/api/youtube/quick-analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          input: input.trim(),
+          detailLevel: settings.summaryDetailLevel
+        })
+      });
+
+      const data = await res.json();
+      if (data.success && data.video) {
+        const newVid: YouTubeVideo = data.video;
+        const existsIdx = videos.findIndex(v => v.videoId === newVid.videoId);
+        let updated: YouTubeVideo[] = [];
+        if (existsIdx >= 0) {
+          updated = [...videos];
+          updated[existsIdx] = newVid;
+        } else {
+          updated = [newVid, ...videos];
+        }
+        updateVideos(updated);
+        setSelectedVideo(newVid);
+        showToast(`'${newVid.title.slice(0, 25)}' AI 분석 완료! 세부 요약창을 열었습니다.`, 'success');
+      } else {
+        showToast(data.error || '영상 실시간 분석에 실패했습니다.', 'error');
+      }
+    } catch (e: any) {
+      console.error('Quick analyze error:', e);
+      showToast(e?.message || '실시간 분석 중 오류가 발생했습니다.', 'error');
+    } finally {
+      setIsQuickAnalyzing(false);
+    }
+  };
+
   // Channel Management handlers
   const handleAddChannel = async (channelData: Omit<YouTubeChannel, 'id' | 'addedAt'>) => {
     const newChannel: YouTubeChannel = {
@@ -690,8 +733,10 @@ function AppContent() {
             onBatchAnalyzeYesterday={handleBatchAnalyzeYesterday}
             onRefreshAndSummarize24h={handleRefreshAndSummarize24h}
             onOpenExportModal={() => setIsExportModalOpen(true)}
+            onQuickAnalyze={handleQuickAnalyze}
             isBatchAnalyzing={isBatchAnalyzing}
             isProcessing={isProcessing24h}
+            isQuickAnalyzing={isQuickAnalyzing}
             analyzingVideoId={analyzingVideoId}
           />
         )}

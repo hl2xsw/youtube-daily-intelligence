@@ -87,7 +87,7 @@ export const DEFAULT_CHANNELS: YouTubeChannel[] = [
   },
   {
     id: 'ch-unrealscience',
-    channelId: 'UCaAmw_tXQOq6n2yP8vDqFSw',
+    channelId: 'UCMc4EmuDxnHPc6pgGW-QWvQ',
     title: '안될과학 Unrealscience',
     handle: '@unrealscience',
     description: '양자역학부터 우주, 첨단 AI 반도체까지 알기 쉬운 과학 지식',
