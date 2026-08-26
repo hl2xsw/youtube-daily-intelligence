@@ -30,12 +30,10 @@ interface DashboardViewProps {
   onToggleBookmark: (videoId: string) => void;
   onReanalyze: (video: YouTubeVideo) => void;
   onBatchAnalyzeYesterday: () => void;
-  onSearch24hVideos: () => void;
-  onSyncChannels?: () => void;
+  onRefreshAndSummarize24h: () => void;
   onOpenExportModal: () => void;
   isBatchAnalyzing: boolean;
-  isSearching24h?: boolean;
-  isSyncing?: boolean;
+  isProcessing?: boolean;
   analyzingVideoId: string | null;
 }
 
@@ -47,12 +45,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onToggleBookmark,
   onReanalyze,
   onBatchAnalyzeYesterday,
-  onSearch24hVideos,
-  onSyncChannels,
+  onRefreshAndSummarize24h,
   onOpenExportModal,
   isBatchAnalyzing,
-  isSearching24h = false,
-  isSyncing = false,
+  isProcessing = false,
   analyzingVideoId
 }) => {
   const { showToast } = useToast();
@@ -235,41 +231,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-xs font-semibold border border-emerald-500/30">
-              실시간 24H 동기화
+              실시간 24H 전용
             </span>
             <h2 className="text-sm sm:text-base font-bold text-white tracking-tight">
-              24시간 이내 최신 영상 검색 및 Gemini AI 핵심 요약
+              24시간 이내 최신 영상 새로고침 및 Gemini AI 핵심 요약
             </h2>
           </div>
           <p className="text-xs text-slate-300 mt-1">
-            설정된 모든 채널의 최신 영상을 즉시 스캔하여 핵심 주제, 주요 사실 3~5개, 상세 줄거리를 자동 요약합니다.
+            24시간 이전 영상은 자동 정리하고, 등록된 모든 채널의 최신 영상을 즉시 스캔하여 Gemini AI로 자동 요약합니다.
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
-          {/* Realtime Channel Sync / Refresh Button */}
-          {onSyncChannels && (
-            <button
-              id="dashboard-sync-channels-btn"
-              onClick={onSyncChannels}
-              disabled={isSyncing || isSearching24h || isBatchAnalyzing}
-              className="px-3.5 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 active:bg-slate-800 text-slate-200 border border-slate-700 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50"
-              title="등록된 모든 채널의 최신 업로드 영상을 실시간 동기화합니다"
-            >
-              <RotateCcw className={`w-3.5 h-3.5 text-sky-400 ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>{isSyncing ? '채널 동기화 중...' : '실시간 영상 동기화'}</span>
-            </button>
-          )}
-
-          {/* Primary 24h Search Button */}
+          {/* Unified 24H Refresh & AI Summary Button */}
           <button
             id="search-24h-btn"
-            onClick={onSearch24hVideos}
-            disabled={isSearching24h || isBatchAnalyzing || isSyncing}
-            className="px-4 py-2 text-xs font-bold bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-950 rounded-lg shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50"
+            onClick={onRefreshAndSummarize24h}
+            disabled={isProcessing || isBatchAnalyzing}
+            className="px-4 py-2 text-xs font-bold bg-amber-400 hover:bg-amber-300 active:bg-amber-500 text-slate-950 rounded-lg shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50"
+            title="현재 시간 기준 최근 24시간 영상을 새로고침하고 미분석 영상을 Gemini AI로 자동 요약합니다"
           >
-            <Sparkles className={`w-3.5 h-3.5 text-amber-600 ${isSearching24h ? 'animate-spin' : ''}`} />
-            <span>{isSearching24h ? '24H 영상 검색 및 요약 중...' : '24시간 영상 검색 & AI 요약'}</span>
+            <Sparkles className={`w-3.5 h-3.5 text-slate-950 ${isProcessing ? 'animate-spin' : ''}`} />
+            <span>{isProcessing ? '24H 새로고침 & 요약 중...' : '24H 새로고침 & AI 요약'}</span>
           </button>
 
           {/* Batch Markdown Dossier */}
@@ -438,7 +421,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               onOpenDetail={onOpenDetail}
               onToggleBookmark={onToggleBookmark}
               onReanalyze={onReanalyze}
-              isAnalyzing={analyzingVideoId === video.id || isBatchAnalyzing || isSearching24h}
+              isAnalyzing={analyzingVideoId === video.id || isBatchAnalyzing || isProcessing}
             />
           ))}
         </div>
@@ -450,7 +433,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
           <h3 className="text-base font-bold text-slate-900">
             {filters.dateFilter === 'yesterday' || filters.dateFilter === '24hours'
-              ? '최근 24시간 / 전일 업로드된 영상이 아직 감지되지 않았습니다'
+              ? '최근 24시간 이내에 업로드된 영상이 아직 없습니다'
               : '조건에 일치하는 영상이 없습니다'}
           </h3>
           <p className="text-xs sm:text-sm text-slate-500 mt-1.5 max-w-md mx-auto leading-relaxed">
@@ -459,12 +442,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           
           <div className="mt-5 flex items-center justify-center gap-2.5 flex-wrap">
             <button
-              onClick={onSearch24hVideos}
-              disabled={isSearching24h}
+              onClick={onRefreshAndSummarize24h}
+              disabled={isProcessing}
               className="px-4 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-2xs transition-colors inline-flex items-center gap-1.5 disabled:opacity-50"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>{isSearching24h ? '24시간 영상 검색 및 요약 중...' : '24시간 최신 영상 실시간 검색 & 요약'}</span>
+              <span>{isProcessing ? '24시간 새로고침 & 요약 중...' : '24H 영상 새로고침 & AI 요약'}</span>
             </button>
             <button
               onClick={() => setFilters(prev => ({ ...prev, dateFilter: 'all' }))}

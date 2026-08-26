@@ -685,7 +685,7 @@ async function fetchVideosForChannelUniversal(ch: {
   title?: string;
   category?: string;
   thumbnailUrl?: string;
-}): Promise<{ videos: any[]; channelId: string; channelTitle: string }> {
+}, only24h: boolean = true): Promise<{ videos: any[]; channelId: string; channelTitle: string }> {
   let targetChannelId = ch.channelId || '';
   let targetHandle = ch.handle || '';
   let channelTitle = ch.title || '';
@@ -735,6 +735,11 @@ async function fetchVideosForChannelUniversal(ch: {
               const videoId = videoIdMatch[1].trim();
               const pubDateIso = new Date(publishedMatch[1]).toISOString();
               const timeStatus = calculateVideoTimeStatus(pubDateIso, nowEpoch);
+
+              // If only24h is true, strictly exclude videos older than 24 hours (diffHours > 24.0)
+              if (only24h && !timeStatus.isWithin24h) {
+                continue;
+              }
 
               videoMap.set(videoId, {
                 id: `yt-${videoId}`,
@@ -840,26 +845,28 @@ async function fetchVideosForChannelUniversal(ch: {
                     const pubDateIso = parseRelativeTimeTextToIso(timeAgo, nowEpoch);
                     const timeStatus = calculateVideoTimeStatus(pubDateIso, nowEpoch);
 
-                    videoMap.set(contentId, {
-                      id: `yt-${contentId}`,
-                      videoId: contentId,
-                      channelId: targetChannelId || `ch-${contentId}`,
-                      channelTitle: channelTitle || 'YouTube Channel',
-                      channelThumbnail: ch.thumbnailUrl,
-                      title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
-                      description: `${channelTitle} 채널의 최신 업로드 영상입니다.`,
-                      thumbnailUrl: `https://i.ytimg.com/vi/${contentId}/hqdefault.jpg`,
-                      publishedAt: pubDateIso,
-                      videoUrl: `https://www.youtube.com/watch?v=${contentId}`,
-                      category: ch.category || '기타',
-                      viewCount: viewCountNum,
-                      isYesterday: timeStatus.isYesterday,
-                      isWithin24h: timeStatus.isWithin24h,
-                      isToday: timeStatus.isToday,
-                      relativeTimeText: timeAgo || timeStatus.relativeTimeText,
-                      isSummarized: false,
-                      createdAt: pubDateIso
-                    });
+                    if (!only24h || timeStatus.isWithin24h) {
+                      videoMap.set(contentId, {
+                        id: `yt-${contentId}`,
+                        videoId: contentId,
+                        channelId: targetChannelId || `ch-${contentId}`,
+                        channelTitle: channelTitle || 'YouTube Channel',
+                        channelThumbnail: ch.thumbnailUrl,
+                        title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+                        description: `${channelTitle} 채널의 최신 업로드 영상입니다.`,
+                        thumbnailUrl: `https://i.ytimg.com/vi/${contentId}/hqdefault.jpg`,
+                        publishedAt: pubDateIso,
+                        videoUrl: `https://www.youtube.com/watch?v=${contentId}`,
+                        category: ch.category || '기타',
+                        viewCount: viewCountNum,
+                        isYesterday: timeStatus.isYesterday,
+                        isWithin24h: timeStatus.isWithin24h,
+                        isToday: timeStatus.isToday,
+                        relativeTimeText: timeAgo || timeStatus.relativeTimeText,
+                        isSummarized: false,
+                        createdAt: pubDateIso
+                      });
+                    }
                   }
                 }
               }
@@ -880,25 +887,27 @@ async function fetchVideosForChannelUniversal(ch: {
                     const pubDateIso = parseRelativeTimeTextToIso(timeAgo, nowEpoch);
                     const timeStatus = calculateVideoTimeStatus(pubDateIso, nowEpoch);
 
-                    videoMap.set(videoId, {
-                      id: `yt-${videoId}`,
-                      videoId,
-                      channelId: targetChannelId || `ch-${videoId}`,
-                      channelTitle: channelTitle || 'YouTube Channel',
-                      channelThumbnail: ch.thumbnailUrl,
-                      title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
-                      description: desc || `${channelTitle} 최신 영상`,
-                      thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-                      publishedAt: pubDateIso,
-                      videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
-                      category: ch.category || '기타',
-                      isYesterday: timeStatus.isYesterday,
-                      isWithin24h: timeStatus.isWithin24h,
-                      isToday: timeStatus.isToday,
-                      relativeTimeText: timeAgo || timeStatus.relativeTimeText,
-                      isSummarized: false,
-                      createdAt: pubDateIso
-                    });
+                    if (!only24h || timeStatus.isWithin24h) {
+                      videoMap.set(videoId, {
+                        id: `yt-${videoId}`,
+                        videoId,
+                        channelId: targetChannelId || `ch-${videoId}`,
+                        channelTitle: channelTitle || 'YouTube Channel',
+                        channelThumbnail: ch.thumbnailUrl,
+                        title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+                        description: desc || `${channelTitle} 최신 영상`,
+                        thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+                        publishedAt: pubDateIso,
+                        videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
+                        category: ch.category || '기타',
+                        isYesterday: timeStatus.isYesterday,
+                        isWithin24h: timeStatus.isWithin24h,
+                        isToday: timeStatus.isToday,
+                        relativeTimeText: timeAgo || timeStatus.relativeTimeText,
+                        isSummarized: false,
+                        createdAt: pubDateIso
+                      });
+                    }
                   }
                 }
               }
@@ -914,25 +923,27 @@ async function fetchVideosForChannelUniversal(ch: {
                   const pubDateIso = parseRelativeTimeTextToIso(timeAgo, nowEpoch);
                   const timeStatus = calculateVideoTimeStatus(pubDateIso, nowEpoch);
 
-                  videoMap.set(videoId, {
-                    id: `yt-${videoId}`,
-                    videoId,
-                    channelId: targetChannelId || `ch-${videoId}`,
-                    channelTitle: channelTitle || 'YouTube Channel',
-                    channelThumbnail: ch.thumbnailUrl,
-                    title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
-                    description: `${channelTitle} 최신 영상`,
-                    thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-                    publishedAt: pubDateIso,
-                    videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
-                    category: ch.category || '기타',
-                    isYesterday: timeStatus.isYesterday,
-                    isWithin24h: timeStatus.isWithin24h,
-                    isToday: timeStatus.isToday,
-                    relativeTimeText: timeAgo || timeStatus.relativeTimeText,
-                    isSummarized: false,
-                    createdAt: pubDateIso
-                  });
+                  if (!only24h || timeStatus.isWithin24h) {
+                    videoMap.set(videoId, {
+                      id: `yt-${videoId}`,
+                      videoId,
+                      channelId: targetChannelId || `ch-${videoId}`,
+                      channelTitle: channelTitle || 'YouTube Channel',
+                      channelThumbnail: ch.thumbnailUrl,
+                      title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+                      description: `${channelTitle} 최신 영상`,
+                      thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+                      publishedAt: pubDateIso,
+                      videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
+                      category: ch.category || '기타',
+                      isYesterday: timeStatus.isYesterday,
+                      isWithin24h: timeStatus.isWithin24h,
+                      isToday: timeStatus.isToday,
+                      relativeTimeText: timeAgo || timeStatus.relativeTimeText,
+                      isSummarized: false,
+                      createdAt: pubDateIso
+                    });
+                  }
                 }
               }
 

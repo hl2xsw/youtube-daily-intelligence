@@ -148,20 +148,22 @@ export function loadVideos(): YouTubeVideo[] {
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      // Strictly purge any legacy mock/fake videos
-      const realOnly = parsed.filter(v => 
-        v && 
-        typeof v.videoId === 'string' && 
-        isRealYouTubeVideoId(v.videoId) &&
-        !v.id?.startsWith('vid-') &&
-        !v.videoId.includes('shuka_') &&
-        !v.videoId.includes('jocoding_') &&
-        !v.videoId.includes('mock')
-      );
-      if (realOnly.length !== parsed.length) {
-        saveVideos(realOnly);
+      const nowEpoch = Date.now();
+      // Strictly purge any legacy mock/fake videos and videos older than 24 hours
+      const validOnly = parsed.filter(v => {
+        if (!v || typeof v.videoId !== 'string' || !isRealYouTubeVideoId(v.videoId)) return false;
+        if (v.id?.startsWith('vid-') || v.videoId.includes('shuka_') || v.videoId.includes('jocoding_') || v.videoId.includes('mock')) return false;
+        
+        // Strict 24-hour expiration check: delete if older than 24.0 hours
+        const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
+        const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
+        return diffHours >= -0.5 && diffHours <= 24.0;
+      });
+
+      if (validOnly.length !== parsed.length) {
+        saveVideos(validOnly);
       }
-      return realOnly;
+      return validOnly;
     }
     return [];
   } catch (e) {
@@ -172,7 +174,15 @@ export function loadVideos(): YouTubeVideo[] {
 
 export function saveVideos(videos: YouTubeVideo[]): void {
   try {
-    localStorage.setItem(VIDEOS_KEY, JSON.stringify(videos));
+    const nowEpoch = Date.now();
+    // Enforce 24-hour retention constraint
+    const filtered = videos.filter(v => {
+      if (!v || typeof v.videoId !== 'string') return false;
+      const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
+      const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
+      return diffHours >= -0.5 && diffHours <= 24.0;
+    });
+    localStorage.setItem(VIDEOS_KEY, JSON.stringify(filtered));
   } catch (e) {
     console.error('Failed to save videos', e);
   }

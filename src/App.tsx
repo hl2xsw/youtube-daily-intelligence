@@ -20,7 +20,7 @@ import {
   saveCategories,
   resetAllData
 } from './utils/storage';
-import { fetchRealChannelVideos, searchAndSummarize24hVideos, generateClientFallbackSummary, syncAndRepairChannels } from './utils/youtubeService';
+import { fetchRealChannelVideos, searchAndSummarize24hVideos, generateClientFallbackSummary, syncAndRepairChannels, calculateVideoTimeStatus } from './utils/youtubeService';
 import { Header } from './components/Header';
 import { DashboardView } from './components/DashboardView';
 import { AnalyticsReportView } from './components/AnalyticsReportView';
@@ -43,17 +43,17 @@ function AppContent() {
   // Modal & Loading States
   const [selectedVideo, setSelectedVideo] = useState<YouTubeVideo | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [isSearching24h, setIsSearching24h] = useState(false);
+  const [isProcessing24h, setIsProcessing24h] = useState(false);
   const [isBatchAnalyzing, setIsBatchAnalyzing] = useState(false);
   const [analyzingVideoId, setAnalyzingVideoId] = useState<string | null>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
 
-  // Sync real videos for channels in parallel
+  // Sync real videos for channels in parallel - strictly enforcing 24-hour window
   const syncChannelVideos = useCallback(async (targetChannels: YouTubeChannel[], existingVideos: YouTubeVideo[]) => {
     const active = targetChannels.filter(c => c.isActive);
-    if (active.length === 0) return existingVideos;
+    if (active.length === 0) return [];
 
+    const nowEpoch = Date.now();
     let updatedList = [...existingVideos];
 
     // Fetch all active channels concurrently
@@ -79,11 +79,28 @@ function AppContent() {
       }
     }
 
-    // Keep only videos that belong to existing channels and sort newest first
+    // STRICT 24-HOUR FILTER & PURGE:
+    // Remove videos older than 24 hours (diffHours > 24.0) and keep valid channel IDs
     const validChannelIds = new Set(targetChannels.map(c => c.channelId));
     const validTitles = new Set(targetChannels.map(c => c.title));
     const cleanedList = updatedList
-      .filter(v => validChannelIds.has(v.channelId) || validTitles.has(v.channelTitle))
+      .filter(v => {
+        if (!validChannelIds.has(v.channelId) && !validTitles.has(v.channelTitle)) return false;
+        const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
+        const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
+        // Exclude older than 24.0 hours
+        return diffHours >= -0.5 && diffHours <= 24.0;
+      })
+      .map(v => {
+        const timeStatus = calculateVideoTimeStatus(v.publishedAt, nowEpoch);
+        return {
+          ...v,
+          isWithin24h: timeStatus.isWithin24h,
+          isToday: timeStatus.isToday,
+          isYesterday: timeStatus.isYesterday,
+          relativeTimeText: timeStatus.relativeTimeText
+        };
+      })
       .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
 
     return cleanedList;
@@ -190,68 +207,110 @@ function AppContent() {
     showToast('설정이 성공적으로 저장되었습니다.', 'success');
   };
 
-  // 1. Sync Channels & Fetch Real Exact Uploaded Videos
-  const handleSyncChannels = async () => {
-    setIsSyncing(true);
-    showToast('등록된 채널의 실시간 업로드 영상을 확인하고 있습니다...', 'info');
-
-    try {
-      const activeChannels = channels.filter(c => c.isActive);
-      if (activeChannels.length === 0) {
-        showToast('활성화된 모니터링 채널이 없습니다.', 'info');
-        setIsSyncing(false);
-        return;
-      }
-
-      const syncedList = await syncChannelVideos(channels, videos);
-      const newFound = syncedList.length - videos.length;
-      updateVideos(syncedList);
-
-      if (newFound > 0) {
-        showToast(`${newFound}개의 새로운 유튜브 업로드 영상을 동기화했습니다!`, 'success');
-      } else {
-        showToast(`모든 채널(${activeChannels.length}개)의 업로드 영상이 최신 상태입니다.`, 'success');
-      }
-    } catch (e) {
-      showToast('영상 동기화 중 오류가 발생했습니다.', 'error');
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  // 1-1. Search & AI Summarize 24h Videos
-  const handleSearch24hVideos = async () => {
+  // 1. Unified 24H Refresh & AI Summarize Handler (Combined Function)
+  const handleRefreshAndSummarize24h = async () => {
     const activeChannels = channels.filter(c => c.isActive);
     if (activeChannels.length === 0) {
-      showToast('활성화된 모니터링 채널이 없습니다. [채널 설정] 탭에서 채널을 확인해주세요.', 'info');
+      showToast('활성화된 모니터링 채널이 없습니다. [채널 설정] 탭에서 채널을 등록해주세요.', 'info');
       return;
     }
 
-    setIsSearching24h(true);
-    showToast('등록 채널의 최근 24시간 업로드 영상 검색 및 AI 요약을 시작합니다...', 'info');
+    setIsProcessing24h(true);
+    showToast('최근 24시간 업로드 영상 새로고침 및 Gemini AI 요약을 진행합니다...', 'info');
 
     try {
-      const result = await searchAndSummarize24hVideos(activeChannels);
-      if (result && result.videos && result.videos.length > 0) {
-        const existingMap = new Map<string, YouTubeVideo>(videos.map(v => [v.id, v]));
-        for (const v of result.videos) {
-          existingMap.set(v.id, v);
-        }
-        const merged: YouTubeVideo[] = Array.from(existingMap.values()).sort(
-          (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
-        );
-        updateVideos(merged);
-        const summarizedCount = result.videos.filter(r => r.isSummarized).length;
-        showToast(`최근 24시간 업로드 영상 ${result.videos.length}건 검색 및 ${summarizedCount}건 AI 요약 완료!`, 'success');
+      // Step A: Search / Fetch latest videos strictly within 24 hours
+      let fresh24hVideos: YouTubeVideo[] = [];
+      const searchResult = await searchAndSummarize24hVideos(activeChannels);
+      
+      if (searchResult && Array.isArray(searchResult.videos) && searchResult.videos.length > 0) {
+        fresh24hVideos = searchResult.videos;
       } else {
-        showToast('최근 24시간 이내에 새로 업로드된 영상이 없습니다.', 'info');
+        // Fallback to syncChannelVideos
+        fresh24hVideos = await syncChannelVideos(channels, videos);
+      }
+
+      // Strict 24h Filter: Purge any video older than 24 hours
+      const nowEpoch = Date.now();
+      const valid24hOnly = fresh24hVideos.filter(v => {
+        const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
+        const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
+        return diffHours >= -0.5 && diffHours <= 24.0;
+      });
+
+      // Step B: Automatically perform AI Summary for unsummarized 24h videos
+      const unsummarized = valid24hOnly.filter(v => !v.isSummarized || !v.summary);
+      let updatedVideosList = [...valid24hOnly];
+
+      if (unsummarized.length > 0) {
+        showToast(`새로 수집된 ${unsummarized.length}건의 영상을 Gemini AI로 순차 분석 중...`, 'info');
+        
+        // Summarize up to 10 latest videos concurrently or in small chunks
+        const summarizePromises = unsummarized.slice(0, 8).map(async (v) => {
+          try {
+            const res = await fetch('/api/youtube/analyze-video', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                videoTitle: v.title,
+                videoDescription: v.description,
+                channelTitle: v.channelTitle,
+                category: v.category,
+                detailLevel: settings.summaryDetailLevel || 'standard'
+              })
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.success && data.summary) {
+                return {
+                  ...v,
+                  isSummarized: true,
+                  summary: data.summary,
+                  category: (data.summary.category as VideoCategory) || v.category
+                };
+              }
+            }
+          } catch (e) {
+            console.warn(`Failed to auto-summarize video ${v.title}:`, e);
+          }
+          return v;
+        });
+
+        const summarizedResults = await Promise.allSettled(summarizePromises);
+        for (const res of summarizedResults) {
+          if (res.status === 'fulfilled' && res.value) {
+            const sumVid = res.value;
+            const idx = updatedVideosList.findIndex(item => item.id === sumVid.id);
+            if (idx >= 0) {
+              updatedVideosList[idx] = sumVid;
+            }
+          }
+        }
+      }
+
+      // Sort newest first
+      updatedVideosList.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+
+      // Save strictly 24h videos to state and localStorage
+      updateVideos(updatedVideosList);
+
+      const totalSummarized = updatedVideosList.filter(v => v.isSummarized).length;
+      if (updatedVideosList.length > 0) {
+        showToast(`최근 24시간 영상 ${updatedVideosList.length}건 새로고침 및 ${totalSummarized}건 AI 요약 완료! (24시간 이전 영상 자동 정리됨)`, 'success');
+      } else {
+        showToast('등록된 채널에서 최근 24시간 이내에 업로드된 새로운 영상이 없습니다.', 'info');
       }
     } catch (e) {
-      showToast('24시간 영상 검색 및 분석 중 오류가 발생했습니다.', 'error');
+      console.error('Error during refresh & summarize:', e);
+      showToast('24시간 영상 새로고침 및 요약 중 오류가 발생했습니다.', 'error');
     } finally {
-      setIsSearching24h(false);
+      setIsProcessing24h(false);
     }
   };
+
+  // Legacy individual handlers (if needed by subcomponents)
+  const handleSyncChannels = handleRefreshAndSummarize24h;
+  const handleSearch24hVideos = handleRefreshAndSummarize24h;
 
   // 1-2. Sync & Repair Channel Metadata and Fetch Videos
   const handleSyncRepairChannels = async () => {
@@ -571,12 +630,9 @@ function AppContent() {
       <Header
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        onSyncChannels={handleSyncChannels}
-        isSyncing={isSyncing}
-        onSearch24hVideos={handleSearch24hVideos}
-        isSearching24h={isSearching24h}
+        onRefreshAndSummarize24h={handleRefreshAndSummarize24h}
+        isProcessing={isProcessing24h}
         onOpenExportModal={() => setIsExportModalOpen(true)}
-        totalYesterdayCount={totalYesterdayVideosCount}
         total24hCount={total24hVideosCount}
       />
 
@@ -591,12 +647,10 @@ function AppContent() {
             onToggleBookmark={handleToggleBookmark}
             onReanalyze={handleAnalyzeVideo}
             onBatchAnalyzeYesterday={handleBatchAnalyzeYesterday}
-            onSearch24hVideos={handleSearch24hVideos}
-            onSyncChannels={handleSyncChannels}
+            onRefreshAndSummarize24h={handleRefreshAndSummarize24h}
             onOpenExportModal={() => setIsExportModalOpen(true)}
             isBatchAnalyzing={isBatchAnalyzing}
-            isSearching24h={isSearching24h}
-            isSyncing={isSyncing}
+            isProcessing={isProcessing24h}
             analyzingVideoId={analyzingVideoId}
           />
         )}

@@ -7,44 +7,26 @@ import {
   Settings, 
   RefreshCw, 
   Download, 
-  Calendar,
   Sparkles
 } from 'lucide-react';
 
 interface HeaderProps {
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
-  onSyncChannels: () => void;
-  isSyncing: boolean;
-  onSearch24hVideos?: () => void;
-  isSearching24h?: boolean;
+  onRefreshAndSummarize24h: () => void;
+  isProcessing: boolean;
   onOpenExportModal: () => void;
-  totalYesterdayCount: number;
-  total24hCount?: number;
+  total24hCount: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
   setActiveTab,
-  onSyncChannels,
-  isSyncing,
-  onSearch24hVideos,
-  isSearching24h = false,
+  onRefreshAndSummarize24h,
+  isProcessing = false,
   onOpenExportModal,
-  totalYesterdayCount,
   total24hCount = 0
 }) => {
-  // Yesterday's formatted date
-  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const formattedYesterday = yesterday.toLocaleDateString('ko-KR', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    weekday: 'short'
-  });
-
-  const displayCount = total24hCount > 0 ? total24hCount : totalYesterdayCount;
-
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -65,7 +47,7 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500 hidden sm:block">
-                설정 채널의 24시간/전일 업로드 영상 AI 핵심 요약 및 인텔리전스 분석
+                설정 채널의 최근 24시간 업로드 영상 검색 및 Gemini AI 핵심 요약
               </p>
             </div>
           </div>
@@ -83,9 +65,9 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <LayoutDashboard className="w-3.5 h-3.5" />
               대시보드
-              {displayCount > 0 && (
+              {total24hCount > 0 && (
                 <span className="ml-1 px-1.5 py-0.2 bg-slate-900 text-white rounded text-[10px] font-bold">
-                  {displayCount}
+                  {total24hCount}
                 </span>
               )}
             </button>
@@ -119,30 +101,17 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Right Action Tools */}
           <div className="flex items-center gap-2">
-            {/* 24h Instant Scan Button */}
-            {onSearch24hVideos && (
-              <button
-                id="header-24h-scan-btn"
-                onClick={onSearch24hVideos}
-                disabled={isSearching24h || isSyncing}
-                title="등록된 채널의 최근 24시간 업로드 영상을 검색하고 AI로 즉시 요약합니다"
-                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-900 bg-amber-100/80 hover:bg-amber-200/80 active:bg-amber-300 border border-amber-300/80 rounded-lg shadow-2xs transition-colors disabled:opacity-50"
-              >
-                <Sparkles className={`w-3.5 h-3.5 text-amber-700 ${isSearching24h ? 'animate-spin' : ''}`} />
-                <span>{isSearching24h ? '24H 요약 중...' : '24H AI 요약'}</span>
-              </button>
-            )}
-
-            {/* Sync Button */}
+            {/* Unified 24H Refresh & AI Summarize Button */}
             <button
-              id="header-sync-btn"
-              onClick={onSyncChannels}
-              disabled={isSyncing || isSearching24h}
-              title="설정된 유튜브 채널의 최신 영상을 다시 확인합니다"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 active:bg-slate-100 border border-slate-200 rounded-lg shadow-2xs transition-colors disabled:opacity-50"
+              id="header-refresh-summarize-btn"
+              onClick={onRefreshAndSummarize24h}
+              disabled={isProcessing}
+              title="현재 시간 기준 최근 24시간 영상을 새로고침하고 미분석 영상을 Gemini AI로 자동 요약합니다"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-slate-900 bg-amber-300 hover:bg-amber-400 active:bg-amber-500 border border-amber-400 rounded-lg shadow-2xs transition-colors disabled:opacity-50"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-slate-800' : 'text-slate-500'}`} />
-              <span className="hidden sm:inline">{isSyncing ? '동기화 중...' : '새로고침'}</span>
+              <RefreshCw className={`w-3.5 h-3.5 text-slate-950 ${isProcessing ? 'animate-spin' : ''}`} />
+              <Sparkles className="w-3.5 h-3.5 text-amber-900" />
+              <span>{isProcessing ? '24H 동기화 & 요약 중...' : '24H 새로고침 & AI 요약'}</span>
             </button>
 
             {/* Export Modal Button */}
@@ -165,7 +134,7 @@ export const Header: React.FC<HeaderProps> = ({
               activeTab === 'dashboard' ? 'bg-slate-900 text-white' : 'text-slate-600 bg-slate-100'
             }`}
           >
-            대시보드 ({displayCount})
+            대시보드 ({total24hCount})
           </button>
           <button
             onClick={() => setActiveTab('analytics')}
