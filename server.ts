@@ -727,7 +727,67 @@ async function fetchVideosForChannelUniversal(ch: {
     'Pragma': 'no-cache'
   };
 
-  // 1. PRIMARY SOURCE: Direct Channel /videos and /streams tab scraping (Captures real-time newest clips from today)
+  // 1. PRIMARY INSTANT SOURCE: Official YouTube RSS XML Feed (Provides exact ISO timestamps for today's videos in <100ms)
+  if (targetChannelId && targetChannelId.startsWith('UC') && !targetChannelId.startsWith('UC_')) {
+    try {
+      const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(targetChannelId)}&_t=${nowEpoch}`;
+      const rssRes = await fetch(rssUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      });
+
+      if (rssRes.ok) {
+        const feedXml = await rssRes.text();
+        if (feedXml.includes('<entry>')) {
+          const entries = feedXml.split('<entry>').slice(1);
+          for (const entry of entries) {
+            const videoIdMatch = entry.match(/<yt:videoId>([^<]+)<\/yt:videoId>/);
+            const titleMatch = entry.match(/<title>([^<]+)<\/title>/);
+            const publishedMatch = entry.match(/<published>([^<]+)<\/published>/);
+            const descMatch = entry.match(/<media:description>([^<]*)<\/media:description>/s);
+            const thumbMatch = entry.match(/<media:thumbnail url="([^"]+)"/);
+            const viewsMatch = entry.match(/<media:statistics views="(\d+)"/);
+
+            if (videoIdMatch && titleMatch && publishedMatch) {
+              const videoId = videoIdMatch[1].trim();
+              const pubDateIso = new Date(publishedMatch[1]).toISOString();
+              const timeStatus = calculateVideoTimeStatus(pubDateIso, nowEpoch);
+
+              if (!only24h || timeStatus.isWithin24h || timeStatus.diffHours <= 72.0) {
+                videoMap.set(videoId, {
+                  id: `yt-${videoId}`,
+                  videoId,
+                  channelId: targetChannelId,
+                  channelTitle: channelTitle || 'YouTube Channel',
+                  channelThumbnail: ch.thumbnailUrl,
+                  title: titleMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+                  description: descMatch ? descMatch[1].trim() : `${channelTitle} 영상`,
+                  thumbnailUrl: thumbMatch ? thumbMatch[1] : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+                  publishedAt: pubDateIso,
+                  videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
+                  category: ch.category || '기타',
+                  viewCount: viewsMatch ? parseInt(viewsMatch[1], 10) : undefined,
+                  isYesterday: timeStatus.isYesterday,
+                  isWithin24h: timeStatus.isWithin24h,
+                  isToday: timeStatus.isToday,
+                  relativeTimeText: timeStatus.relativeTimeText,
+                  isSummarized: false,
+                  createdAt: pubDateIso
+                });
+              }
+            }
+          }
+        }
+      }
+    } catch (rssErr) {
+      console.warn(`RSS feed fetch failed for ${channelTitle}:`, rssErr);
+    }
+  }
+
+  // 2. SECONDARY SOURCE: Direct Channel /videos and /streams tab scraping (Enriches with live streams, views, etc)
   const urlsToScrape: string[] = [];
   if (targetHandle) {
     const cleanH = targetHandle.startsWith('@') ? targetHandle : `@${targetHandle}`;
@@ -1315,7 +1375,7 @@ ${transcript ? `[실제 음성 발화 자막 스크립트]\n${transcript.slice(0
 5. 💡 **시사점 및 액션 플랜 (takeaways)**: 시청자/투자자가 즉시 적용할 수 있는 구체적인 3~5개 지침.
 `;
 
-    const candidateModels = ['gemini-3.7-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+    const candidateModels = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite'];
 
     for (const modelName of candidateModels) {
       try {
