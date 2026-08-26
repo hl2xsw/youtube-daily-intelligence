@@ -615,7 +615,7 @@ function calculateVideoTimeStatus(pubDateIso: string, nowEpoch: number = Date.no
     relativeTimeText = `${days}일 전`;
   }
 
-  // Strict 24-hour window (including 1 hour ago, 5 mins ago, etc.)
+  // Strict 24-hour window (allowing slight future tolerance for clock skew)
   const isWithin24h = diffHours >= -0.5 && diffHours <= 24.0;
 
   // Calendar dates in KST (UTC+9)
@@ -634,8 +634,10 @@ function calculateVideoTimeStatus(pubDateIso: string, nowEpoch: number = Date.no
     yesterdayKst.getUTCMonth() === pubKst.getUTCMonth() &&
     yesterdayKst.getUTCDate() === pubKst.getUTCDate();
 
-  const isToday = isSameDayKst || (diffHours >= -0.5 && diffHours < 16);
-  const isYesterday = !isToday && (isYesterdayDayKst || (diffHours >= 16 && diffHours <= 48.0));
+  // isToday: exact same calendar day in KST OR published within past 16 hours
+  const isToday = isSameDayKst || (diffHours >= -0.5 && diffHours < 16.0);
+  // isYesterday: previous calendar day in KST OR published between 16h and 48h
+  const isYesterday = !isToday && (isYesterdayDayKst || (diffHours >= 16.0 && diffHours <= 48.0));
   const isRecent3Days = diffHours <= 72.0;
 
   return {
@@ -651,31 +653,42 @@ function calculateVideoTimeStatus(pubDateIso: string, nowEpoch: number = Date.no
 
 // Helper to parse Korean/English relative times to ISO string
 function parseRelativeTimeTextToIso(timeAgoStr: string, nowEpoch: number = Date.now()): string {
-  if (!timeAgoStr) return new Date(nowEpoch).toISOString();
+  if (!timeAgoStr) return new Date(nowEpoch - 365 * 24 * 3600 * 1000).toISOString();
   const clean = timeAgoStr.replace(/스트리밍/g, '').trim();
 
+  // Seconds ago
   const secMatch = clean.match(/(\d+)\s*(?:초|seconds?)\s*(?:전|ago)/i);
   if (secMatch) return new Date(nowEpoch - parseInt(secMatch[1], 10) * 1000).toISOString();
 
+  // Minutes ago
   const minMatch = clean.match(/(\d+)\s*(?:분|minutes?|mins?)\s*(?:전|ago)/i);
   if (minMatch) return new Date(nowEpoch - parseInt(minMatch[1], 10) * 60 * 1000).toISOString();
 
+  // Hours ago
   const hourMatch = clean.match(/(\d+)\s*(?:시간|hours?)\s*(?:전|ago)/i);
   if (hourMatch) return new Date(nowEpoch - parseInt(hourMatch[1], 10) * 3600 * 1000).toISOString();
 
+  // Days ago
   const dayMatch = clean.match(/(\d+)\s*(?:일|days?)\s*(?:전|ago)/i);
   if (dayMatch) return new Date(nowEpoch - parseInt(dayMatch[1], 10) * 24 * 3600 * 1000).toISOString();
 
+  // Weeks ago
   const weekMatch = clean.match(/(\d+)\s*(?:주|weeks?)\s*(?:전|ago)/i);
   if (weekMatch) return new Date(nowEpoch - parseInt(weekMatch[1], 10) * 7 * 24 * 3600 * 1000).toISOString();
 
+  // Months ago
   const monthMatch = clean.match(/(\d+)\s*(?:개월|달|months?)\s*(?:전|ago)/i);
   if (monthMatch) return new Date(nowEpoch - parseInt(monthMatch[1], 10) * 30 * 24 * 3600 * 1000).toISOString();
+
+  // Years ago
+  const yearMatch = clean.match(/(\d+)\s*(?:년|years?)\s*(?:전|ago)/i);
+  if (yearMatch) return new Date(nowEpoch - parseInt(yearMatch[1], 10) * 365 * 24 * 3600 * 1000).toISOString();
 
   if (clean.includes('방금') || clean.includes('초 전')) return new Date(nowEpoch - 30 * 1000).toISOString();
   if (clean.includes('어제') || clean.includes('yesterday')) return new Date(nowEpoch - 24 * 3600 * 1000).toISOString();
 
-  return new Date(nowEpoch).toISOString();
+  // Fallback: Default to old video date so it does not pollute the 24h filter
+  return new Date(nowEpoch - 365 * 24 * 3600 * 1000).toISOString();
 }
 
 // Universal YouTube Channel Video Extractor (Multi-Source: Live /videos Scraping + Recent Search Filter + RSS Feed)

@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { YouTubeVideo, VideoCategory, YouTubeChannel, FilterState } from '../types';
+import { calculateVideoTimeStatus } from '../utils/youtubeService';
 import { VideoCard } from './VideoCard';
 import { 
   Sparkles, 
@@ -70,22 +71,37 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     statusFilter: 'all'
   });
 
-  // Calculate quick metrics
+  // Calculate quick metrics with precise 24h/today/yesterday evaluation
   const todayVideos = useMemo(() => {
-    return videos.filter(v => v.isToday || (Date.now() - new Date(v.publishedAt).getTime()) <= 16 * 60 * 60 * 1000);
+    const now = Date.now();
+    return videos.filter(v => {
+      const status = calculateVideoTimeStatus(v.publishedAt, now);
+      return status.isToday || v.isToday;
+    });
   }, [videos]);
 
   const within24hVideos = useMemo(() => {
     const now = Date.now();
-    return videos.filter(v => v.isWithin24h || (now - new Date(v.publishedAt).getTime()) <= 24 * 60 * 60 * 1000);
+    return videos.filter(v => {
+      const status = calculateVideoTimeStatus(v.publishedAt, now);
+      return status.isWithin24h || v.isWithin24h;
+    });
   }, [videos]);
 
-  const yesterdayVideos = useMemo(() => videos.filter(v => v.isYesterday), [videos]);
+  const yesterdayVideos = useMemo(() => {
+    const now = Date.now();
+    return videos.filter(v => {
+      const status = calculateVideoTimeStatus(v.publishedAt, now);
+      return status.isYesterday || v.isYesterday;
+    });
+  }, [videos]);
+
   const summarizedCount = useMemo(() => videos.filter(v => v.isSummarized).length, [videos]);
   const activeChannelsCount = useMemo(() => channels.filter(c => c.isActive).length, [channels]);
 
   // Filtered Videos
   const filteredVideos = useMemo(() => {
+    const now = Date.now();
     return videos.filter(video => {
       // Category filter
       if (filters.category !== 'ALL' && video.category !== filters.category) {
@@ -97,21 +113,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         return false;
       }
 
-      // Date filter
-      const now = Date.now();
-      const pubTime = new Date(video.publishedAt).getTime();
-      const diffHours = (now - pubTime) / (1000 * 60 * 60);
+      // Date filter with dynamic status check
+      const timeStatus = calculateVideoTimeStatus(video.publishedAt, now);
+      const isWithin24 = timeStatus.isWithin24h || video.isWithin24h;
+      const isTod = timeStatus.isToday || video.isToday;
+      const isYest = timeStatus.isYesterday || video.isYesterday;
 
       if (filters.dateFilter === 'today') {
-        if (!video.isToday && diffHours > 16) return false;
+        if (!isTod) return false;
       } else if (filters.dateFilter === '24hours') {
-        if (!video.isWithin24h && diffHours > 24) return false;
+        if (!isWithin24) return false;
       } else if (filters.dateFilter === 'yesterday') {
-        if (!video.isYesterday) return false;
+        if (!isYest) return false;
       } else if (filters.dateFilter === 'recent3days') {
-        if (diffHours > 72) return false;
+        if (timeStatus.diffHours > 72.0) return false;
       } else if (filters.dateFilter === 'recent7days') {
-        if (diffHours > 168) return false;
+        if (timeStatus.diffHours > 168.0) return false;
       }
 
       // Status filter
