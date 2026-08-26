@@ -18,6 +18,7 @@ import {
   FileCode,
   Layers,
   RotateCcw,
+  RefreshCw,
   ArrowUpDown
 } from 'lucide-react';
 import { generateBatchMarkdown, downloadFile } from '../utils/exportUtils';
@@ -386,6 +387,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
           )}
+
+          {/* Quick Refresh Button */}
+          <button
+            onClick={onRefreshAndSummarize24h}
+            disabled={isProcessing || isBatchAnalyzing}
+            title="최신 24시간 영상 즉시 새로고침"
+            className="p-1.5 text-amber-700 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 rounded-lg border border-amber-200 transition-colors disabled:opacity-50 flex items-center gap-1 text-xs font-semibold px-2"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isProcessing ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">새로고침</span>
+          </button>
 
           {/* View Mode Toggle */}
           <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">

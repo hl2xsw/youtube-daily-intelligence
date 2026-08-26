@@ -124,8 +124,10 @@ function AppContent() {
     setSettings(initSettings);
     setCategories(initCategories);
 
-    if (validVideos.length === 0 && initChannels.length > 0) {
-      syncChannelVideos(initChannels, []).then(synced => {
+    // ALWAYS automatically perform a live background sync on app startup
+    // This immediately brings in the latest videos (5m ago, 1h ago, etc.) from all active channels
+    if (initChannels.length > 0) {
+      syncChannelVideos(initChannels, validVideos).then(synced => {
         if (synced && synced.length > 0) {
           setVideos(synced);
           saveVideos(synced);
@@ -230,13 +232,26 @@ function AppContent() {
         fresh24hVideos = await syncChannelVideos(channels, videos);
       }
 
-      // Strict 24h Filter: Purge any video older than 24 hours
+      // Strict 24h Filter: Purge any video older than 24 hours & preserve existing summaries
       const nowEpoch = Date.now();
-      const valid24hOnly = fresh24hVideos.filter(v => {
-        const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
-        const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
-        return diffHours >= -0.5 && diffHours <= 24.0;
-      });
+      const valid24hOnly = fresh24hVideos
+        .filter(v => {
+          const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
+          const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
+          return diffHours >= -0.5 && diffHours <= 24.0;
+        })
+        .map(v => {
+          const existing = videos.find(e => e.videoId === v.videoId);
+          if (existing) {
+            return {
+              ...v,
+              isSummarized: v.isSummarized || existing.isSummarized,
+              summary: v.summary || existing.summary,
+              isBookmarked: existing.isBookmarked
+            };
+          }
+          return v;
+        });
 
       // Step B: Automatically perform AI Summary for unsummarized 24h videos
       const unsummarized = valid24hOnly.filter(v => !v.isSummarized || !v.summary);

@@ -654,7 +654,7 @@ function calculateVideoTimeStatus(pubDateIso: string, nowEpoch: number = Date.no
 // Helper to parse Korean/English relative times to ISO string
 function parseRelativeTimeTextToIso(timeAgoStr: string, nowEpoch: number = Date.now()): string {
   if (!timeAgoStr) return new Date(nowEpoch - 365 * 24 * 3600 * 1000).toISOString();
-  const clean = timeAgoStr.replace(/스트리밍/g, '').trim();
+  const clean = timeAgoStr.replace(/스트리밍|실시간|시작일|최초|공개일|시간:|됨/g, '').trim();
 
   // Seconds ago
   const secMatch = clean.match(/(\d+)\s*(?:초|seconds?)\s*(?:전|ago)/i);
