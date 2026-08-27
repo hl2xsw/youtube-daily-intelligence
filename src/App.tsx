@@ -100,7 +100,7 @@ function AppContent() {
       console.warn('Sync videos error:', e);
     }
 
-    // Filter valid channels and retain within 72 hours with fresh timeStatus
+    // Filter valid channels and retain up to 30 days (720h) with fresh timeStatus
     const validChannelIds = new Set(targetChannels.map(c => c.channelId));
     const validTitles = new Set(targetChannels.map(c => c.title));
     const cleanedList = updatedList
@@ -108,7 +108,7 @@ function AppContent() {
         if (!validChannelIds.has(v.channelId) && !validTitles.has(v.channelTitle)) return false;
         const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
         const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
-        return diffHours >= -0.5 && diffHours <= 72.0;
+        return diffHours >= -0.5 && diffHours <= 720.0;
       })
       .map(v => {
         const timeStatus = calculateVideoTimeStatus(v.publishedAt, nowEpoch);
@@ -275,7 +275,7 @@ function AppContent() {
         }
       }
 
-      // Clean list: keep within 72 hours and calculate fresh time status
+      // Clean list: keep within 30 days (720 hours) and calculate fresh time status
       const validChannelsSet = new Set(channels.map(c => c.channelId));
       const validTitlesSet = new Set(channels.map(c => c.title));
 
@@ -284,7 +284,7 @@ function AppContent() {
           if (!validChannelsSet.has(v.channelId) && !validTitlesSet.has(v.channelTitle)) return false;
           const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
           const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
-          return diffHours >= -0.5 && diffHours <= 72.0;
+          return diffHours >= -0.5 && diffHours <= 720.0;
         })
         .map(v => {
           const timeStatus = calculateVideoTimeStatus(v.publishedAt, nowEpoch);

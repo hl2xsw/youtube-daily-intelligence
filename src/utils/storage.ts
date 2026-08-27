@@ -146,6 +146,74 @@ export function loadChannels(): YouTubeChannel[] {
           hasChanges = true;
         }
 
+        // EO 이오 specific heal
+        if (
+          title.toLowerCase().includes('eo') || 
+          title.includes('이오') || 
+          handle.toLowerCase().includes('eoeoeo') ||
+          channelId === 'UC6tTZ_yP_Kx6kHjU3_oE1sQ'
+        ) {
+          if (channelId !== 'UC5WXrNWV1Z8UqrBqYEMwvFg') {
+            channelId = 'UC5WXrNWV1Z8UqrBqYEMwvFg';
+            hasChanges = true;
+          }
+          title = 'EO 이오';
+          handle = '@eoeoeo';
+          category = '비즈니스/스타트업';
+          subscriberCount = '68만명';
+          hasChanges = true;
+        }
+
+        // 테크몽 Techmong specific heal
+        if (
+          title.includes('테크몽') || 
+          handle.toLowerCase().includes('techmong') || 
+          channelId === 'UCe_P1k1G1zI0Nf_F7dKqT0w'
+        ) {
+          if (channelId !== 'UCFX6adXoyQKxft933NB3rmA') {
+            channelId = 'UCFX6adXoyQKxft933NB3rmA';
+            hasChanges = true;
+          }
+          title = '테크몽 Techmong';
+          handle = '@techmong';
+          category = 'IT/테크';
+          subscriberCount = '75만명';
+          hasChanges = true;
+        }
+
+        // 1분만 specific heal
+        if (
+          title.includes('1분만') || 
+          handle.toLowerCase().includes('1minonly') || 
+          channelId === 'UCkglhL_29gGqP_lA7b52dJQ'
+        ) {
+          if (channelId !== 'UCM31rBPQdifQKUmBKtwVqBg') {
+            channelId = 'UCM31rBPQdifQKUmBKtwVqBg';
+            hasChanges = true;
+          }
+          title = '1분만';
+          handle = '@1minonly';
+          category = '과학/지식';
+          subscriberCount = '135만명';
+          hasChanges = true;
+        }
+
+        // 한국경제TV specific heal
+        if (
+          title.includes('한국경제') || 
+          handle.includes('한국경제')
+        ) {
+          if (channelId !== 'UCF8AeLlUbEpKju6v1H6p8Eg') {
+            channelId = 'UCF8AeLlUbEpKju6v1H6p8Eg';
+            hasChanges = true;
+          }
+          title = '한국경제TV';
+          handle = '@한국경제TV';
+          category = '뉴스/시사';
+          subscriberCount = '110만명';
+          hasChanges = true;
+        }
+
         return {
           ...ch,
           channelId,
@@ -191,7 +259,7 @@ export function loadVideos(): YouTubeVideo[] {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
       const nowEpoch = Date.now();
-      // Keep real YouTube videos within 72 hours (covering today, within 24h, and yesterday)
+      // Keep real YouTube videos within 30 days (720 hours) and calculate fresh time status
       const validOnly = parsed
         .filter(v => {
           if (!v || typeof v.videoId !== 'string' || !isRealYouTubeVideoId(v.videoId)) return false;
@@ -199,7 +267,7 @@ export function loadVideos(): YouTubeVideo[] {
           
           const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
           const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
-          return diffHours >= -0.5 && diffHours <= 72.0;
+          return diffHours >= -0.5 && diffHours <= 720.0;
         })
         .map(v => {
           const timeStatus = calculateVideoTimeStatus(v.publishedAt || v.createdAt || new Date().toISOString(), nowEpoch);
@@ -227,12 +295,12 @@ export function loadVideos(): YouTubeVideo[] {
 export function saveVideos(videos: YouTubeVideo[]): void {
   try {
     const nowEpoch = Date.now();
-    // Retain up to 72 hours to allow viewing today, 24h, and yesterday videos
+    // Retain up to 30 days to allow comprehensive date filtering (today, 24h, yesterday, recent 3/7/30 days)
     const filtered = videos.filter(v => {
       if (!v || typeof v.videoId !== 'string') return false;
       const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
       const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
-      return diffHours >= -0.5 && diffHours <= 72.0;
+      return diffHours >= -0.5 && diffHours <= 720.0;
     });
     localStorage.setItem(VIDEOS_KEY, JSON.stringify(filtered));
   } catch (e) {

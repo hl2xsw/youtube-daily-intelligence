@@ -247,7 +247,7 @@ export const CHANNEL_PRESET_PACKS = [
         subscriberCount: '35.5만명'
       },
       {
-        channelId: 'UCe_P1k1G1zI0Nf_F7dKqT0w',
+        channelId: 'UCFX6adXoyQKxft933NB3rmA',
         title: '테크몽 Techmong',
         handle: '@techmong',
         category: 'IT/테크' as const,
@@ -274,8 +274,8 @@ export const CHANNEL_PRESET_PACKS = [
       },
       {
         channelId: 'UChlv4GSd7OQl3js-jkLOnFA',
-        title: '삼프로TV_경제의신과함께',
-        handle: '@samprotv',
+        title: '삼프로TV 3PROTV',
+        handle: '@3protv',
         category: '경제/재테크' as const,
         description: '국내외 거시경제 분석, 글로벌 증시 및 기업 심층 브리핑',
         thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_n4L5P-s8v=s900-c-k-c0x00ffffff-no-rj',
@@ -299,7 +299,7 @@ export const CHANNEL_PRESET_PACKS = [
     description: '차세대 유니콘, 비즈니스 모델 혁신, 첨단 과학 및 리더십 인터뷰',
     channels: [
       {
-        channelId: 'UC6tTZ_yP_Kx6kHjU3_oE1sQ',
+        channelId: 'UC5WXrNWV1Z8UqrBqYEMwvFg',
         title: 'EO 이오',
         handle: '@eoeoeo',
         category: '비즈니스/스타트업' as const,
@@ -308,7 +308,7 @@ export const CHANNEL_PRESET_PACKS = [
         subscriberCount: '68만명'
       },
       {
-        channelId: 'UCaAmw_tXQOq6n2yP8vDqFSw',
+        channelId: 'UCMc4EmuDxnHPc6pgGW-QWvQ',
         title: '안될과학 Unrealscience',
         handle: '@unrealscience',
         category: '과학/지식' as const,
@@ -317,7 +317,7 @@ export const CHANNEL_PRESET_PACKS = [
         subscriberCount: '115만명'
       },
       {
-        channelId: 'UCkglhL_29gGqP_lA7b52dJQ',
+        channelId: 'UCM31rBPQdifQKUmBKtwVqBg',
         title: '1분만',
         handle: '@1minonly',
         category: '과학/지식' as const,

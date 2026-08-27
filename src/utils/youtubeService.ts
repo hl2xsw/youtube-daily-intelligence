@@ -416,6 +416,76 @@ export async function syncAndRepairChannels(channels: YouTubeChannel[]): Promise
     const isChannelA = cleanTitle.includes('채널A') || cleanHandle.includes('channela');
     const isMbn = cleanTitle.includes('MBN') || cleanHandle.includes('mbn');
     const isHankyung = cleanTitle.includes('한국경제') || cleanHandle.includes('hankyung');
+    const isSampro = cleanTitle.includes('삼프로') || cleanHandle.includes('sampro') || cleanHandle.includes('3pro') || ch.channelId === 'UChLrzhoZhnngiCE0n6P97vg';
+    const isUnreal = cleanTitle.includes('안될과학') || cleanHandle.includes('unreal') || ch.channelId === 'UCaAmw_tXQOq6n2yP8vDqFSw';
+    const isEo = cleanTitle.toLowerCase().includes('eo') || cleanTitle.includes('이오') || cleanHandle.toLowerCase().includes('eoeoeo') || ch.channelId === 'UC6tTZ_yP_Kx6kHjU3_oE1sQ';
+    const isTechmong = cleanTitle.includes('테크몽') || cleanHandle.toLowerCase().includes('techmong') || ch.channelId === 'UCe_P1k1G1zI0Nf_F7dKqT0w';
+    const is1min = cleanTitle.includes('1분만') || cleanHandle.toLowerCase().includes('1minonly') || ch.channelId === 'UCkglhL_29gGqP_lA7b52dJQ';
+
+    if (isSampro && ch.channelId !== 'UChlv4GSd7OQl3js-jkLOnFA') {
+      hasChanges = true;
+      updatedList.push({
+        ...ch,
+        channelId: 'UChlv4GSd7OQl3js-jkLOnFA',
+        title: '삼프로TV 3PROTV',
+        handle: '@3protv',
+        category: '경제/재테크',
+        thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_n4L5P-s8v=s900-c-k-c0x00ffffff-no-rj'
+      });
+      continue;
+    }
+
+    if (isUnreal && ch.channelId !== 'UCMc4EmuDxnHPc6pgGW-QWvQ') {
+      hasChanges = true;
+      updatedList.push({
+        ...ch,
+        channelId: 'UCMc4EmuDxnHPc6pgGW-QWvQ',
+        title: '안될과학 Unrealscience',
+        handle: '@unrealscience',
+        category: '과학/지식',
+        thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_unreal=s900-c-k-c0x00ffffff-no-rj'
+      });
+      continue;
+    }
+
+    if (isEo && ch.channelId !== 'UC5WXrNWV1Z8UqrBqYEMwvFg') {
+      hasChanges = true;
+      updatedList.push({
+        ...ch,
+        channelId: 'UC5WXrNWV1Z8UqrBqYEMwvFg',
+        title: 'EO 이오',
+        handle: '@eoeoeo',
+        category: '비즈니스/스타트업',
+        thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_eo=s900-c-k-c0x00ffffff-no-rj'
+      });
+      continue;
+    }
+
+    if (isTechmong && ch.channelId !== 'UCFX6adXoyQKxft933NB3rmA') {
+      hasChanges = true;
+      updatedList.push({
+        ...ch,
+        channelId: 'UCFX6adXoyQKxft933NB3rmA',
+        title: '테크몽 Techmong',
+        handle: '@techmong',
+        category: 'IT/테크',
+        thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_techmong=s900-c-k-c0x00ffffff-no-rj'
+      });
+      continue;
+    }
+
+    if (is1min && ch.channelId !== 'UCM31rBPQdifQKUmBKtwVqBg') {
+      hasChanges = true;
+      updatedList.push({
+        ...ch,
+        channelId: 'UCM31rBPQdifQKUmBKtwVqBg',
+        title: '1분만',
+        handle: '@1minonly',
+        category: '과학/지식',
+        thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_1min=s900-c-k-c0x00ffffff-no-rj'
+      });
+      continue;
+    }
 
     if (isJtbc && ch.channelId !== 'UCsU-I-vHLiaMfV_ceaYz5rQ') {
       hasChanges = true;

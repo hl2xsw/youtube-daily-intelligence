@@ -184,19 +184,18 @@ const KNOWN_CHANNELS_MAP: Array<{
     subscriberCount: '340만명'
   },
   {
-    keywords: ['samprotv', '삼프로tv', '삼프로', '경제의신과함께'],
-    channelId: 'UChLrzhoZhnngiCE0n6P97vg',
-    title: '삼프로TV_경제의신과함께',
-    handle: '@samprotv',
+    keywords: ['samprotv', '삼프로tv', '삼프로', '경제의신과함께', '3protv'],
+    channelId: 'UChlv4GSd7OQl3js-jkLOnFA',
+    title: '삼프로TV 3PROTV',
+    handle: '@3protv',
     description: '국내외 거시경제 분석, 글로벌 증시 및 기업 심층 브리핑',
     thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_n4L5P-s8v=s900-c-k-c0x00ffffff-no-rj',
     category: '경제/재테크',
     subscriberCount: '250만명'
   },
-
   {
     keywords: ['unrealscience', '안될과학'],
-    channelId: 'UCaAmw_tXQOq6n2yP8vDqFSw',
+    channelId: 'UCMc4EmuDxnHPc6pgGW-QWvQ',
     title: '안될과학 Unrealscience',
     handle: '@unrealscience',
     description: '양자역학부터 우주, 첨단 AI 반도체까지 알기 쉬운 과학 지식',
@@ -225,8 +224,8 @@ const KNOWN_CHANNELS_MAP: Array<{
     subscriberCount: '35.5만명'
   },
   {
-    keywords: ['eoeoeo', 'eo', '이오', '태용', '스타트업'],
-    channelId: 'UC6tTZ_yP_Kx6kHjU3_oE1sQ',
+    keywords: ['eoeoeo', 'eo', '이오', '태용', '스타트업', 'eokorea', 'eo korea'],
+    channelId: 'UC5WXrNWV1Z8UqrBqYEMwvFg',
     title: 'EO 이오',
     handle: '@eoeoeo',
     description: '글로벌 스타트업 혁신가들과 비즈니스 리더들의 스토리',
@@ -236,7 +235,7 @@ const KNOWN_CHANNELS_MAP: Array<{
   },
   {
     keywords: ['techmong', '테크몽'],
-    channelId: 'UCe_P1k1G1zI0Nf_F7dKqT0w',
+    channelId: 'UCFX6adXoyQKxft933NB3rmA',
     title: '테크몽 Techmong',
     handle: '@techmong',
     description: '쉽고 친절한 IT 기기 및 테크 제품 심층 분석',
@@ -246,7 +245,7 @@ const KNOWN_CHANNELS_MAP: Array<{
   },
   {
     keywords: ['1min', '1minonly', '1분만'],
-    channelId: 'UCkglhL_29gGqP_lA7b52dJQ',
+    channelId: 'UCM31rBPQdifQKUmBKtwVqBg',
     title: '1분만',
     handle: '@1minonly',
     description: '세상의 모든 흥미로운 1분 지식과 이야기',
