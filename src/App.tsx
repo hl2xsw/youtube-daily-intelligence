@@ -633,9 +633,9 @@ function AppContent() {
     }
   };
 
-  const handleDeleteChannel = (channelId: string) => {
-    const targetChannel = channels.find(c => c.id === channelId);
-    const updatedChannels = channels.filter(c => c.id !== channelId);
+  const handleDeleteChannel = (channelIdOrId: string) => {
+    const targetChannel = channels.find(c => c.id === channelIdOrId || c.channelId === channelIdOrId);
+    const updatedChannels = channels.filter(c => c.id !== channelIdOrId && c.channelId !== channelIdOrId);
     updateChannels(updatedChannels);
 
     // Also remove videos belonging to this deleted channel

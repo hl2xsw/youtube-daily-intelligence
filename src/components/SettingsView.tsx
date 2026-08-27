@@ -85,8 +85,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<YouTubeChannelSearchResult[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
-  const [addedChannelIds, setAddedChannelIds] = useState<Set<string>>(new Set());
   const [channelCategoryOverrides, setChannelCategoryOverrides] = useState<Record<string, VideoCategory>>({});
+
+  // Accurate duplicate check against the current active channels list
+  const isChannelAlreadyRegistered = (target: { channelId?: string; handle?: string; title?: string }) => {
+    return channels.some(c => {
+      // 1. Exact match by channelId
+      if (c.channelId && target.channelId && c.channelId === target.channelId) {
+        return true;
+      }
+      // 2. Exact match by handle (only if both handles are valid and contain real text beyond '@')
+      const cHandle = (c.handle || '').replace(/^@/, '').trim().toLowerCase();
+      const tHandle = (target.handle || '').replace(/^@/, '').trim().toLowerCase();
+      if (cHandle.length >= 2 && tHandle.length >= 2 && cHandle === tHandle) {
+        return true;
+      }
+      return false;
+    });
+  };
 
   // Direct Manual Add Toggle
   const [showDirectAdd, setShowDirectAdd] = useState(false);
@@ -168,10 +184,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // 2. Select & Add Channel from Search Results
   const handleSelectChannelToAdd = (candidate: YouTubeChannelSearchResult) => {
-    const isAlreadyAdded = channels.some(c => 
-      c.channelId === candidate.channelId || 
-      (c.handle && candidate.handle && c.handle.toLowerCase() === candidate.handle.toLowerCase())
-    );
+    const isAlreadyAdded = isChannelAlreadyRegistered(candidate);
 
     if (isAlreadyAdded) {
       showToast(`'${candidate.title}' 채널은 이미 등록되어 있습니다.`, 'info');
@@ -191,7 +204,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       subscriberCount: candidate.subscriberCount
     });
 
-    setAddedChannelIds(prev => new Set(prev).add(candidate.channelId));
     showToast(`'${candidate.title}' 채널이 성공적으로 추가되었습니다!`, 'success');
   };
 
@@ -208,10 +220,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     try {
       const channelData = await lookupYouTubeChannel(input);
       if (channelData) {
-        const exists = channels.some(c => 
-          c.channelId === channelData.channelId || 
-          (c.handle && c.handle.toLowerCase() === channelData.handle?.toLowerCase())
-        );
+        const exists = isChannelAlreadyRegistered(channelData);
 
         if (exists) {
           showToast('이미 등록된 유튜브 채널입니다.', 'info');
@@ -249,10 +258,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     // Pre-select all channels that are not already registered
     const initialSelected = new Set<string>();
     pack.channels.forEach(ch => {
-      const isAlreadyAdded = channels.some(c => 
-        c.channelId === ch.channelId || 
-        (c.handle && ch.handle && c.handle.toLowerCase() === ch.handle.toLowerCase())
-      );
+      const isAlreadyAdded = isChannelAlreadyRegistered(ch);
       if (!isAlreadyAdded) {
         initialSelected.add(ch.channelId);
       }
@@ -432,10 +438,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {searchResults.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                 {searchResults.map((result) => {
-                  const isAlreadyAdded = channels.some(c => 
-                    c.channelId === result.channelId || 
-                    (c.handle && result.handle && c.handle.toLowerCase() === result.handle.toLowerCase())
-                  ) || addedChannelIds.has(result.channelId);
+                  const isAlreadyAdded = isChannelAlreadyRegistered(result);
 
                   const channelCategory = channelCategoryOverrides[result.channelId] || result.category || selectedDefaultCategory;
 
@@ -539,9 +542,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
             {CHANNEL_PRESET_PACKS.map((pack) => {
               const totalChannels = pack.channels.length;
-              const alreadyCount = pack.channels.filter(pc => 
-                channels.some(c => c.channelId === pc.channelId || (c.handle && pc.handle && c.handle.toLowerCase() === pc.handle.toLowerCase()))
-              ).length;
+              const alreadyCount = pack.channels.filter(pc => isChannelAlreadyRegistered(pc)).length;
 
               return (
                 <div 
@@ -1091,10 +1092,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {/* Channels List */}
             <div className="flex-1 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-lg">
               {previewPack.channels.map((ch) => {
-                const isAlready = channels.some(c => 
-                  c.channelId === ch.channelId || 
-                  (c.handle && ch.handle && c.handle.toLowerCase() === ch.handle.toLowerCase())
-                );
+                const isAlready = isChannelAlreadyRegistered(ch);
                 const isChecked = selectedPackChannelIds.has(ch.channelId);
 
                 return (

@@ -174,7 +174,7 @@ const KNOWN_CHANNELS_MAP: Array<{
     subscriberCount: '62만명'
   },
   {
-    keywords: ['shukaworld', '슈카월드', '슈카'],
+    keywords: ['shukaworld', '슈카월드', '슈카', '슈가월드', 'syuka', 'syukaworld'],
     channelId: 'UCsJ6RuBiTVWRX156FVbeaGg',
     title: '슈카월드',
     handle: '@shukaworld',

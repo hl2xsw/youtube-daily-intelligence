@@ -640,11 +640,15 @@ export async function lookupYouTubeChannel(input: string): Promise<YouTubeChanne
     title = cleanInput.replace('@', '');
   }
 
+  const formattedHandle = handle 
+    ? handle 
+    : (cleanInput.startsWith('@') ? cleanInput : `@${cleanInput.replace(/\s+/g, '')}`);
+
   return {
     id: `ch-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     channelId: channelId || (handle ? `UC_handle_${handle}` : `UC_${cleanInput}`),
     title,
-    handle: handle || (cleanInput.startsWith('@') ? cleanInput : `@${cleanInput.toLowerCase().replace(/[^a-z0-9_]/g, '')}`),
+    handle: formattedHandle,
     description: `${title} 채널 (사용자 직접 등록)`,
     thumbnailUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
     category: 'IT/테크',
