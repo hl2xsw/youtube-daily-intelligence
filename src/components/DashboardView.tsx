@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { YouTubeVideo, VideoCategory, YouTubeChannel, FilterState } from '../types';
 import { calculateVideoTimeStatus } from '../utils/youtubeService';
 import { VideoCard } from './VideoCard';
@@ -73,11 +73,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     ];
   }, [categories]);
 
-  // Filters State - Default to 24hours / yesterday if available, else 'all'
+  // Auto-detect optimal initial date filter so users never face a blank 0-items screen
+  const [userManuallySelectedDate, setUserManuallySelectedDate] = useState(false);
+  const [searchScope, setSearchScope] = useState<'all' | 'filtered'>('all'); // When searching, default to all-time scope
+
+  // Filters State
   const [filters, setFilters] = useState<FilterState>({
     category: 'ALL',
     channelId: 'ALL',
-    dateFilter: '24hours',
+    dateFilter: 'all',
     searchQuery: '',
     statusFilter: 'all'
   });
@@ -116,12 +120,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     });
   }, [videos]);
 
+  // Set intelligent initial date filter on first load or when videos change
+  useEffect(() => {
+    if (!userManuallySelectedDate) {
+      if (within24hVideos.length > 0) {
+        setFilters(prev => ({ ...prev, dateFilter: '24hours' }));
+      } else if (todayVideos.length > 0) {
+        setFilters(prev => ({ ...prev, dateFilter: 'today' }));
+      } else if (recent3DaysVideos.length > 0) {
+        setFilters(prev => ({ ...prev, dateFilter: 'recent3days' }));
+      } else {
+        setFilters(prev => ({ ...prev, dateFilter: 'all' }));
+      }
+    }
+  }, [videos.length, within24hVideos.length, todayVideos.length, recent3DaysVideos.length, userManuallySelectedDate]);
+
   const summarizedCount = useMemo(() => videos.filter(v => v.isSummarized).length, [videos]);
   const activeChannelsCount = useMemo(() => channels.filter(c => c.isActive).length, [channels]);
 
   // Top Key Topics across summarized today/24h videos
   const topKeyPoints = useMemo(() => {
-    const activeVids = within24hVideos.filter(v => v.isSummarized && v.summary);
+    const activeVids = (within24hVideos.length > 0 ? within24hVideos : videos).filter(v => v.isSummarized && v.summary);
     const points: { video: YouTubeVideo; text: string; channel: string }[] = [];
     for (const v of activeVids) {
       if (v.summary?.keyPoints && v.summary.keyPoints.length > 0) {
@@ -134,17 +153,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       if (points.length >= 3) break;
     }
     return points;
-  }, [within24hVideos]);
+  }, [within24hVideos, videos]);
 
   const handleQuickSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!quickInput.trim()) {
+    const clean = quickInput.trim();
+    if (!clean) {
       showToast('분석할 유튜브 URL 또는 키워드를 입력해주세요.', 'info');
       return;
     }
-    if (onQuickAnalyze) {
-      onQuickAnalyze(quickInput.trim());
-      setQuickInput('');
+    // If it's a URL or video ID, run instant AI analyze
+    const isUrl = /(?:youtu\.be\/|youtube\.com\/)/i.test(clean) || /^[a-zA-Z0-9_-]{11}$/.test(clean);
+    if (isUrl) {
+      if (onQuickAnalyze) {
+        onQuickAnalyze(clean);
+        setQuickInput('');
+      }
+    } else {
+      // If it's a search term, open YouTube Video Search Modal with the keyword directly
+      if (onOpenVideoSearch) {
+        onOpenVideoSearch(clean);
+      } else if (onQuickAnalyze) {
+        onQuickAnalyze(clean);
+        setQuickInput('');
+      }
     }
   };
 
@@ -153,7 +185,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const cleanQ = query.trim().toLowerCase();
     if (!cleanQ) return true;
 
-    const tokens = cleanQ.split(/\s+/).filter(t => t.length > 0);
+    // Split query by whitespace, commas, or special separators
+    const tokens = cleanQ.split(/[\s,+/]+/).filter(t => t.length > 0);
     const searchableText = [
       video.title,
       video.channelTitle,
@@ -170,9 +203,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return tokens.every(token => searchableText.includes(token));
   };
 
-  // Filtered Videos
+  // Filtered Videos - When user searches, prioritize showing matches from all time by default
   const filteredVideos = useMemo(() => {
     const now = Date.now();
+    const isSearching = !!filters.searchQuery.trim();
+
     return videos.filter(video => {
       // Category filter
       if (filters.category !== 'ALL' && video.category !== filters.category) {
@@ -184,7 +219,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         return false;
       }
 
-      // Date filter with dynamic status check
+      // Status filter
+      if (filters.statusFilter === 'summarized' && !video.isSummarized) return false;
+      if (filters.statusFilter === 'unsummarized' && video.isSummarized) return false;
+      if (filters.statusFilter === 'bookmarked' && !video.isBookmarked) return false;
+
+      // Search Query Matching
+      if (isSearching) {
+        if (!matchSearchQuery(video, filters.searchQuery)) {
+          return false;
+        }
+        // When searching and user chose 'filtered' scope, apply date filter too
+        if (searchScope === 'filtered') {
+          const timeStatus = calculateVideoTimeStatus(video.publishedAt, now);
+          const isWithin24 = timeStatus.isWithin24h || video.isWithin24h;
+          const isTod = timeStatus.isToday || video.isToday;
+          const isYest = timeStatus.isYesterday || video.isYesterday;
+
+          if (filters.dateFilter === 'today' && !isTod) return false;
+          if (filters.dateFilter === '24hours' && !isWithin24) return false;
+          if (filters.dateFilter === 'yesterday' && !isYest) return false;
+          if (filters.dateFilter === 'recent3days' && timeStatus.diffHours > 72.0) return false;
+          if (filters.dateFilter === 'recent7days' && timeStatus.diffHours > 168.0) return false;
+        }
+        return true;
+      }
+
+      // Date filter with dynamic status check (When not searching)
       const timeStatus = calculateVideoTimeStatus(video.publishedAt, now);
       const isWithin24 = timeStatus.isWithin24h || video.isWithin24h;
       const isTod = timeStatus.isToday || video.isToday;
@@ -202,21 +263,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         if (timeStatus.diffHours > 168.0) return false;
       }
 
-      // Status filter
-      if (filters.statusFilter === 'summarized' && !video.isSummarized) return false;
-      if (filters.statusFilter === 'unsummarized' && video.isSummarized) return false;
-      if (filters.statusFilter === 'bookmarked' && !video.isBookmarked) return false;
-
-      // Search Query
-      if (filters.searchQuery.trim()) {
-        if (!matchSearchQuery(video, filters.searchQuery)) {
-          return false;
-        }
-      }
-
       return true;
     });
-  }, [videos, filters]);
+  }, [videos, filters, searchScope]);
 
   // Check how many videos in ALL collection match search query (ignoring date filter)
   const allTimeSearchMatchesCount = useMemo(() => {
@@ -487,7 +536,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
         <span className="text-xs font-semibold text-slate-500 shrink-0 mr-1">기간 필터:</span>
         <button
-          onClick={() => setFilters(prev => ({ ...prev, dateFilter: 'today' }))}
+          onClick={() => {
+            setUserManuallySelectedDate(true);
+            setFilters(prev => ({ ...prev, dateFilter: 'today' }));
+          }}
           className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
             filters.dateFilter === 'today'
               ? 'bg-emerald-600 text-white shadow-2xs'
@@ -499,7 +551,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </button>
 
         <button
-          onClick={() => setFilters(prev => ({ ...prev, dateFilter: '24hours' }))}
+          onClick={() => {
+            setUserManuallySelectedDate(true);
+            setFilters(prev => ({ ...prev, dateFilter: '24hours' }));
+          }}
           className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
             filters.dateFilter === '24hours'
               ? 'bg-slate-900 text-white shadow-2xs'
@@ -511,7 +566,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </button>
 
         <button
-          onClick={() => setFilters(prev => ({ ...prev, dateFilter: 'yesterday' }))}
+          onClick={() => {
+            setUserManuallySelectedDate(true);
+            setFilters(prev => ({ ...prev, dateFilter: 'yesterday' }));
+          }}
           className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
             filters.dateFilter === 'yesterday'
               ? 'bg-slate-900 text-white shadow-2xs'
@@ -523,7 +581,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </button>
 
         <button
-          onClick={() => setFilters(prev => ({ ...prev, dateFilter: 'recent3days' }))}
+          onClick={() => {
+            setUserManuallySelectedDate(true);
+            setFilters(prev => ({ ...prev, dateFilter: 'recent3days' }));
+          }}
           className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
             filters.dateFilter === 'recent3days'
               ? 'bg-slate-900 text-white shadow-2xs'
@@ -535,7 +596,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </button>
 
         <button
-          onClick={() => setFilters(prev => ({ ...prev, dateFilter: 'all' }))}
+          onClick={() => {
+            setUserManuallySelectedDate(true);
+            setFilters(prev => ({ ...prev, dateFilter: 'all' }));
+          }}
           className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
             filters.dateFilter === 'all'
               ? 'bg-slate-900 text-white shadow-2xs'
@@ -568,40 +632,65 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* 4. Search & Multi-Filter Toolbar */}
       <div className="bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        {/* Search Bar */}
-        <div className="relative flex-1 min-w-0">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="영상 제목, 채널명, 핵심 주제, 키워드로 검색 (예: 엔비디아, 삼프로TV, AI)..."
-            value={filters.searchQuery}
-            onChange={(e) => setFilters(prev => ({ ...prev, searchQuery: e.target.value }))}
-            className="w-full pl-9 pr-16 py-1.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400 transition-all text-slate-900 placeholder:text-slate-400"
-          />
-          {filters.searchQuery && (
+        {/* Search Bar Form */}
+        <form 
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (filters.searchQuery.trim() && filteredVideos.length === 0 && onOpenVideoSearch) {
+              onOpenVideoSearch(filters.searchQuery.trim());
+            }
+          }}
+          className="relative flex-1 min-w-0 flex items-center gap-1.5"
+        >
+          <div className="relative flex-1 min-w-0">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="영상 제목, 채널명, 핵심 주제, 키워드로 검색 (엔터 시 실시간 검색 연동)..."
+              value={filters.searchQuery}
+              onChange={(e) => setFilters(prev => ({ ...prev, searchQuery: e.target.value }))}
+              className="w-full pl-9 pr-16 py-1.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400 transition-all text-slate-900 placeholder:text-slate-400"
+            />
+            {filters.searchQuery && (
+              <button
+                type="button"
+                onClick={() => setFilters(prev => ({ ...prev, searchQuery: '' }))}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 font-semibold"
+              >
+                지우기
+              </button>
+            )}
+          </div>
+          {onOpenVideoSearch && (
             <button
-              onClick={() => setFilters(prev => ({ ...prev, searchQuery: '' }))}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 font-semibold"
+              type="button"
+              onClick={() => onOpenVideoSearch(filters.searchQuery || '')}
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1 shrink-0 shadow-2xs"
+              title="유튜브 전체에서 실시간 검색"
             >
-              지우기
+              <Globe className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">유튜브 검색</span>
             </button>
           )}
-        </div>
+        </form>
 
         {/* Filter Dropdowns & Controls */}
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
           {/* Date Filter */}
           <select
             value={filters.dateFilter}
-            onChange={(e) => setFilters(prev => ({ ...prev, dateFilter: e.target.value as any }))}
+            onChange={(e) => {
+              setUserManuallySelectedDate(true);
+              setFilters(prev => ({ ...prev, dateFilter: e.target.value as any }));
+            }}
             className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 bg-slate-50 text-slate-900 cursor-pointer hover:border-slate-300 focus:outline-none"
           >
+            <option value="all">전체 수집 영상 ({videos.length}개)</option>
             <option value="24hours">⚡ 최근 24시간 ({within24hVideos.length}개)</option>
             <option value="today">🔥 오늘(당일) 업로드 ({todayVideos.length}개)</option>
             <option value="yesterday">📅 전일(어제) 영상 ({yesterdayVideos.length}개)</option>
             <option value="recent3days">최근 3일 이내</option>
             <option value="recent7days">최근 7일 이내</option>
-            <option value="all">전체 수집 영상 ({videos.length}개)</option>
           </select>
 
           {/* Channel Filter */}
@@ -627,18 +716,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <option value="unsummarized">요약 대기</option>
             <option value="bookmarked">북마크 영상</option>
           </select>
-
-          {/* Live YouTube Video Search Button */}
-          {onOpenVideoSearch && (
-            <button
-              onClick={() => onOpenVideoSearch(filters.searchQuery || '')}
-              className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1 shrink-0 shadow-2xs"
-              title="유튜브 전체에서 실시간 검색창 열기"
-            >
-              <Search className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden sm:inline">유튜브 검색</span>
-            </button>
-          )}
 
           {/* Reset Filters */}
           {(filters.category !== 'ALL' || filters.channelId !== 'ALL' || filters.dateFilter !== 'all' || filters.searchQuery || filters.statusFilter !== 'all') && (

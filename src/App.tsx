@@ -847,6 +847,7 @@ function AppContent() {
         existingVideos={videos}
         onClose={() => setIsVideoSearchModalOpen(false)}
         onAddVideo={handleAddVideoFromSearch}
+        onQuickAnalyze={handleQuickAnalyze}
       />
 
       {/* Excel / CSV / Document Export Modal */}

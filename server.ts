@@ -666,12 +666,31 @@ app.post('/api/youtube/search-videos', async (req, res) => {
     }
 
     const html = await searchRes.text();
-    const match = html.match(/var ytInitialData = ({.*?});<\/script>/s) || html.match(/ytInitialData\s*=\s*({.+?});/s);
-    if (!match) {
-      return res.json({ success: true, videos: [], total: 0 });
+    let data: any = null;
+    
+    // Pattern 1: Standard ytInitialData
+    const match1 = html.match(/var ytInitialData = ({.*?});<\/script>/s) || html.match(/ytInitialData\s*=\s*({.+?});/s);
+    if (match1) {
+      try {
+        data = JSON.parse(match1[1]);
+      } catch (e) {
+        // continue to backup
+      }
     }
 
-    const data = JSON.parse(match[1]);
+    // Pattern 2: Window assigned ytInitialData
+    if (!data) {
+      const match2 = html.match(/window\["ytInitialData"\]\s*=\s*({.+?});/s);
+      if (match2) {
+        try {
+          data = JSON.parse(match2[1]);
+        } catch (e) {}
+      }
+    }
+
+    if (!data) {
+      return res.json({ success: true, videos: [], total: 0 });
+    }
     const videos: any[] = [];
     const seenIds = new Set<string>();
 
