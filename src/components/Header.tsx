@@ -7,7 +7,9 @@ import {
   Settings, 
   RefreshCw, 
   Download, 
-  Sparkles
+  Sparkles,
+  Search,
+  Globe
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -16,6 +18,7 @@ interface HeaderProps {
   onRefreshAndSummarize24h: () => void;
   isProcessing: boolean;
   onOpenExportModal: () => void;
+  onOpenVideoSearch?: () => void;
   total24hCount: number;
 }
 
@@ -25,6 +28,7 @@ export const Header: React.FC<HeaderProps> = ({
   onRefreshAndSummarize24h,
   isProcessing = false,
   onOpenExportModal,
+  onOpenVideoSearch,
   total24hCount = 0
 }) => {
   return (
@@ -101,6 +105,19 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Right Action Tools */}
           <div className="flex items-center gap-2">
+            {/* Live YouTube Search Button */}
+            {onOpenVideoSearch && (
+              <button
+                id="header-video-search-btn"
+                onClick={onOpenVideoSearch}
+                title="유튜브 전체 실시간 동영상 검색 & AI 분석"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-800 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 border border-slate-200 rounded-lg shadow-2xs transition-colors"
+              >
+                <Search className="w-3.5 h-3.5 text-slate-600" />
+                <span className="hidden sm:inline">동영상 검색</span>
+              </button>
+            )}
+
             {/* Unified 24H Refresh & AI Summarize Button */}
             <button
               id="header-refresh-summarize-btn"

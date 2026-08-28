@@ -585,6 +585,151 @@ app.post('/api/youtube/search-channels', async (req, res) => {
   }
 });
 
+// Real-Time YouTube Video Search Endpoint
+app.post('/api/youtube/search-videos', async (req, res) => {
+  try {
+    const { query, dateFilter = 'all', sortBy = 'relevance', limit = 25 } = req.body;
+    if (!query || typeof query !== 'string' || !query.trim()) {
+      return res.status(400).json({ error: '검색어를 입력해주세요.' });
+    }
+
+    const trimmed = query.trim();
+    const nowEpoch = Date.now();
+
+    // 1. Direct Video ID or YouTube URL detection
+    const urlMatch = trimmed.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/i);
+    const directVideoId = urlMatch ? urlMatch[1] : (/^[a-zA-Z0-9_-]{11}$/.test(trimmed) ? trimmed : null);
+
+    if (directVideoId) {
+      try {
+        let title = '';
+        let channelTitle = '';
+        let thumbnail = `https://i.ytimg.com/vi/${directVideoId}/hqdefault.jpg`;
+        let description = '';
+
+        const oembedRes = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${directVideoId}&format=json`);
+        if (oembedRes.ok) {
+          const oembed = await oembedRes.json();
+          title = oembed.title || '';
+          channelTitle = oembed.author_name || '';
+          thumbnail = oembed.thumbnail_url || thumbnail;
+        }
+
+        const details = await fetchYouTubeVideoDetailsAndTranscript(directVideoId);
+        title = title || (details.fullDescription ? details.fullDescription.split('\n')[0].slice(0, 100) : `유튜브 영상 (${directVideoId})`);
+        description = details.fullDescription ? details.fullDescription.slice(0, 200) : `${channelTitle} 채널의 영상입니다.`;
+
+        const singleResult = [{
+          videoId: directVideoId,
+          channelId: `ch-${directVideoId}`,
+          channelTitle: channelTitle || 'YouTube Creator',
+          title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+          description,
+          timeAgo: '최근',
+          viewCountText: '',
+          duration: '',
+          thumbnailUrl: thumbnail,
+          videoUrl: `https://www.youtube.com/watch?v=${directVideoId}`,
+          publishedAt: new Date().toISOString()
+        }];
+
+        return res.json({ success: true, videos: singleResult, total: 1 });
+      } catch (directErr) {
+        console.warn('Direct video lookup fallback to standard search:', directErr);
+      }
+    }
+
+    // 2. Determine YouTube SP search filter parameter
+    let sp = 'EgIQAQ%3D%3D'; // Default Type: Video
+    if (sortBy === 'date') {
+      sp = 'CAISAhAB'; // Video + Sort by upload date
+    } else if (sortBy === 'viewCount') {
+      sp = 'CAMSAhAB'; // Video + Sort by view count
+    } else if (dateFilter === 'today' || dateFilter === '24hours') {
+      sp = 'EgQIAhAB'; // Video + Today / 24 hours
+    } else if (dateFilter === 'week') {
+      sp = 'EgQIAxAB'; // Video + This week
+    } else if (dateFilter === 'month') {
+      sp = 'EgQIBBAB'; // Video + This month
+    }
+
+    const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(trimmed)}&sp=${sp}`;
+    const searchRes = await fetch(searchUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
+      }
+    });
+
+    if (!searchRes.ok) {
+      throw new Error(`유튜브 검색 서버 응답 실패 (${searchRes.status})`);
+    }
+
+    const html = await searchRes.text();
+    const match = html.match(/var ytInitialData = ({.*?});<\/script>/s) || html.match(/ytInitialData\s*=\s*({.+?});/s);
+    if (!match) {
+      return res.json({ success: true, videos: [], total: 0 });
+    }
+
+    const data = JSON.parse(match[1]);
+    const videos: any[] = [];
+    const seenIds = new Set<string>();
+
+    const traverse = (node: any) => {
+      if (!node || typeof node !== 'object') return;
+      if (node.videoRenderer) {
+        const vr = node.videoRenderer;
+        if (vr.videoId && !seenIds.has(vr.videoId)) {
+          seenIds.add(vr.videoId);
+          const title = vr.title?.runs?.map((r: any) => r.text).join('') || vr.title?.simpleText || '';
+          const channelTitle = vr.ownerText?.runs?.map((r: any) => r.text).join('') || vr.shortBylineText?.runs?.map((r: any) => r.text).join('') || '';
+          const channelId = vr.ownerText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || vr.shortBylineText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || '';
+          const channelThumbnail = vr.channelThumbnailSupportedRenderers?.channelThumbnailWithLinkRenderer?.thumbnail?.thumbnails?.[0]?.url || '';
+          const timeAgo = vr.publishedTimeText?.simpleText || '';
+          const viewCountText = vr.viewCountText?.simpleText || vr.viewCountText?.runs?.map((r: any) => r.text).join('') || '';
+          const lengthText = vr.lengthText?.simpleText || '';
+          const desc = vr.detailedMetadataSnippets?.[0]?.snippetText?.runs?.map((r: any) => r.text).join('') || vr.descriptionSnippet?.runs?.map((r: any) => r.text).join('') || '';
+          
+          let thumbnail = vr.thumbnail?.thumbnails?.slice(-1)[0]?.url || `https://i.ytimg.com/vi/${vr.videoId}/hqdefault.jpg`;
+          if (thumbnail.startsWith('//')) thumbnail = 'https:' + thumbnail;
+
+          if (title.trim()) {
+            const approxPubDate = parseRelativeTimeTextToIso(timeAgo, nowEpoch);
+            videos.push({
+              videoId: vr.videoId,
+              channelId,
+              channelTitle: channelTitle.trim() || 'YouTube Creator',
+              channelThumbnail,
+              title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+              description: desc.trim(),
+              timeAgo: timeAgo.trim(),
+              viewCountText: viewCountText.trim(),
+              duration: lengthText.trim(),
+              thumbnailUrl: thumbnail,
+              videoUrl: `https://www.youtube.com/watch?v=${vr.videoId}`,
+              publishedAt: approxPubDate
+            });
+          }
+        }
+      }
+      for (const k of Object.keys(node)) {
+        traverse(node[k]);
+      }
+    };
+
+    traverse(data);
+
+    res.json({
+      success: true,
+      videos: videos.slice(0, Math.min(50, limit)),
+      total: videos.length
+    });
+  } catch (error: any) {
+    console.error('Video search endpoint error:', error);
+    res.status(500).json({ error: error.message || '동영상 검색 중 오류가 발생했습니다.' });
+  }
+});
+
 // Helper to calculate exact elapsed time and relative date categorization (KST UTC+9 aware)
 function calculateVideoTimeStatus(pubDateIso: string, nowEpoch: number = Date.now()): {
   diffHours: number;

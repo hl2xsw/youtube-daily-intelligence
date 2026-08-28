@@ -1,4 +1,4 @@
-import { YouTubeChannel, YouTubeVideo, VideoCategory } from '../types';
+import { YouTubeChannel, YouTubeVideo, VideoCategory, YouTubeVideoSearchResult } from '../types';
 
 // Calculate exact elapsed time and relative date categorization
 export function calculateVideoTimeStatus(pubDateIso: string, nowEpoch: number = Date.now()): {
@@ -351,6 +351,42 @@ export interface YouTubeChannelSearchResult {
   thumbnailUrl: string;
   subscriberCount: string;
   category: string;
+}
+
+export async function searchYouTubeVideos(
+  query: string,
+  options?: {
+    dateFilter?: 'all' | 'today' | '24hours' | 'week' | 'month';
+    sortBy?: 'relevance' | 'date' | 'viewCount';
+    limit?: number;
+  }
+): Promise<YouTubeVideoSearchResult[]> {
+  const cleanQuery = query.trim();
+  if (!cleanQuery) return [];
+
+  try {
+    const res = await fetch('/api/youtube/search-videos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: cleanQuery,
+        dateFilter: options?.dateFilter || 'all',
+        sortBy: options?.sortBy || 'relevance',
+        limit: options?.limit || 30
+      })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.videos)) {
+        return data.videos;
+      }
+    }
+  } catch (e) {
+    console.warn('Backend video search error:', e);
+  }
+
+  return [];
 }
 
 export async function searchYouTubeChannels(query: string): Promise<YouTubeChannelSearchResult[]> {

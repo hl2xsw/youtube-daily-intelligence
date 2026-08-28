@@ -46,6 +46,8 @@ export interface YouTubeVideo {
   publishedAt: string; // ISO string
   duration?: string;
   viewCount?: number;
+  viewCountText?: string;
+  timeAgo?: string;
   videoUrl: string;
   category: VideoCategory;
   isYesterday: boolean;
@@ -75,6 +77,21 @@ export interface DailyReport {
   categoryBreakdown: { category: VideoCategory; count: number; percentage: number }[];
   recommendedActions: string[];
   createdAt: string;
+}
+
+export interface YouTubeVideoSearchResult {
+  videoId: string;
+  channelId?: string;
+  channelTitle: string;
+  channelThumbnail?: string;
+  title: string;
+  description: string;
+  timeAgo: string;
+  viewCountText?: string;
+  duration?: string;
+  thumbnailUrl: string;
+  videoUrl: string;
+  publishedAt?: string;
 }
 
 export interface AppSettings {

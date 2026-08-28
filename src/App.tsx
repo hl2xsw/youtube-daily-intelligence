@@ -27,6 +27,7 @@ import { AnalyticsReportView } from './components/AnalyticsReportView';
 import { SettingsView } from './components/SettingsView';
 import { VideoDetailModal } from './components/VideoDetailModal';
 import { ExportModal } from './components/ExportModal';
+import { VideoSearchModal } from './components/VideoSearchModal';
 import { ToastProvider, useToast } from './components/Toast';
 
 function AppContent() {
@@ -43,6 +44,8 @@ function AppContent() {
   // Modal & Loading States
   const [selectedVideo, setSelectedVideo] = useState<YouTubeVideo | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isVideoSearchModalOpen, setIsVideoSearchModalOpen] = useState(false);
+  const [videoSearchInitialQuery, setVideoSearchInitialQuery] = useState('');
   const [isProcessing24h, setIsProcessing24h] = useState(false);
   const [isBatchAnalyzing, setIsBatchAnalyzing] = useState(false);
   const [analyzingVideoId, setAnalyzingVideoId] = useState<string | null>(null);
@@ -605,6 +608,32 @@ function AppContent() {
     }
   };
 
+  // 4.6 Open YouTube Live Video Search Modal
+  const handleOpenVideoSearch = (initialQuery?: string) => {
+    setVideoSearchInitialQuery(initialQuery || '');
+    setIsVideoSearchModalOpen(true);
+  };
+
+  // Add video selected from VideoSearchModal to dashboard and open detail or toast
+  const handleAddVideoFromSearch = (newVid: YouTubeVideo) => {
+    const existsIdx = videos.findIndex(v => v.videoId === newVid.videoId);
+    let updated: YouTubeVideo[] = [];
+    if (existsIdx >= 0) {
+      updated = [...videos];
+      updated[existsIdx] = {
+        ...newVid,
+        isBookmarked: updated[existsIdx].isBookmarked || newVid.isBookmarked
+      };
+    } else {
+      updated = [newVid, ...videos];
+    }
+    updateVideos(updated);
+    if (newVid.isSummarized) {
+      setSelectedVideo(newVid);
+    }
+    showToast(`'${newVid.title.slice(0, 25)}' 영상이 대시보드에 추가되었습니다!`, 'success');
+  };
+
   // Channel Management handlers
   const handleAddChannel = async (channelData: Omit<YouTubeChannel, 'id' | 'addedAt'>) => {
     const newChannel: YouTubeChannel = {
@@ -745,6 +774,7 @@ function AppContent() {
         onRefreshAndSummarize24h={handleRefreshAndSummarize24h}
         isProcessing={isProcessing24h}
         onOpenExportModal={() => setIsExportModalOpen(true)}
+        onOpenVideoSearch={handleOpenVideoSearch}
         total24hCount={total24hVideosCount}
       />
 
@@ -762,6 +792,7 @@ function AppContent() {
             onRefreshAndSummarize24h={handleRefreshAndSummarize24h}
             onOpenExportModal={() => setIsExportModalOpen(true)}
             onQuickAnalyze={handleQuickAnalyze}
+            onOpenVideoSearch={handleOpenVideoSearch}
             isBatchAnalyzing={isBatchAnalyzing}
             isProcessing={isProcessing24h}
             isQuickAnalyzing={isQuickAnalyzing}
@@ -806,6 +837,16 @@ function AppContent() {
         onReanalyze={handleAnalyzeVideo}
         onChangeCategory={handleChangeVideoCategory}
         isAnalyzing={analyzingVideoId === selectedVideo?.id}
+      />
+
+      {/* Live YouTube Video Search Modal */}
+      <VideoSearchModal
+        isOpen={isVideoSearchModalOpen}
+        initialQuery={videoSearchInitialQuery}
+        categories={categories}
+        existingVideos={videos}
+        onClose={() => setIsVideoSearchModalOpen(false)}
+        onAddVideo={handleAddVideoFromSearch}
       />
 
       {/* Excel / CSV / Document Export Modal */}

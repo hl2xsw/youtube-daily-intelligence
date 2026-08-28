@@ -20,7 +20,9 @@ import {
   RotateCcw,
   RefreshCw,
   ArrowUpDown,
-  Flame
+  Flame,
+  ArrowRight,
+  Globe
 } from 'lucide-react';
 import { generateBatchMarkdown, downloadFile } from '../utils/exportUtils';
 import { useToast } from './Toast';
@@ -36,6 +38,7 @@ interface DashboardViewProps {
   onRefreshAndSummarize24h: () => void;
   onOpenExportModal: () => void;
   onQuickAnalyze?: (input: string) => Promise<void>;
+  onOpenVideoSearch?: (initialQuery?: string) => void;
   isBatchAnalyzing: boolean;
   isProcessing?: boolean;
   isQuickAnalyzing?: boolean;
@@ -53,6 +56,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onRefreshAndSummarize24h,
   onOpenExportModal,
   onQuickAnalyze,
+  onOpenVideoSearch,
   isBatchAnalyzing,
   isProcessing = false,
   isQuickAnalyzing = false,
@@ -144,6 +148,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
   };
 
+  // Helper for multi-token Hangul/English search matching
+  const matchSearchQuery = (video: YouTubeVideo, query: string): boolean => {
+    const cleanQ = query.trim().toLowerCase();
+    if (!cleanQ) return true;
+
+    const tokens = cleanQ.split(/\s+/).filter(t => t.length > 0);
+    const searchableText = [
+      video.title,
+      video.channelTitle,
+      video.summary?.coreTopic || '',
+      ...(video.summary?.keywords || []),
+      ...(video.summary?.keyPoints || []),
+      video.summary?.detailedSummary || '',
+      ...(video.summary?.takeaways || []),
+      video.description || '',
+      video.fullDescription || '',
+      video.category || ''
+    ].join(' ').toLowerCase();
+
+    return tokens.every(token => searchableText.includes(token));
+  };
+
   // Filtered Videos
   const filteredVideos = useMemo(() => {
     const now = Date.now();
@@ -183,13 +209,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       // Search Query
       if (filters.searchQuery.trim()) {
-        const q = filters.searchQuery.toLowerCase();
-        const matchTitle = video.title.toLowerCase().includes(q);
-        const matchChannel = video.channelTitle.toLowerCase().includes(q);
-        const matchCore = video.summary?.coreTopic.toLowerCase().includes(q);
-        const matchKeywords = video.summary?.keywords.some(k => k.toLowerCase().includes(q));
-        const matchPoints = video.summary?.keyPoints.some(p => p.toLowerCase().includes(q));
-        if (!matchTitle && !matchChannel && !matchCore && !matchKeywords && !matchPoints) {
+        if (!matchSearchQuery(video, filters.searchQuery)) {
           return false;
         }
       }
@@ -197,6 +217,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       return true;
     });
   }, [videos, filters]);
+
+  // Check how many videos in ALL collection match search query (ignoring date filter)
+  const allTimeSearchMatchesCount = useMemo(() => {
+    if (!filters.searchQuery.trim()) return 0;
+    return videos.filter(video => {
+      if (filters.category !== 'ALL' && video.category !== filters.category) return false;
+      if (filters.channelId !== 'ALL' && video.channelId !== filters.channelId) return false;
+      return matchSearchQuery(video, filters.searchQuery);
+    }).length;
+  }, [videos, filters.searchQuery, filters.category, filters.channelId]);
 
   // Quick download of all yesterday/24h summaries in markdown
   const handleDownloadYesterdayBatch = () => {
@@ -355,7 +385,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* 2.2 Instant Video URL & Topic AI Direct Analyzer */}
+      {/* 2.2 Instant Video URL & Topic AI Direct Analyzer + Video Search Launcher */}
       <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 p-4 sm:p-5 rounded-xl border border-slate-700 shadow-md text-white">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-2">
@@ -364,16 +394,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                실시간 유튜브 영상 URL / 토픽 즉시 AI 심층 분석
+                실시간 유튜브 영상 URL / 토픽 즉시 AI 심층 분석 & 동영상 검색
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30">
-                  직접 분석 기능
+                  직접 검색 & AI 분석
                 </span>
               </h3>
               <p className="text-xs text-slate-300">
-                특정 영상 링크나 검색어(예: 오늘 증시, 삼프로TV, 엔비디아)를 입력하면 즉시 자막·설명을 분석하여 요약 카드를 생성합니다.
+                특정 영상 링크나 검색어를 입력하여 즉시 분석하거나, 유튜브 전체 동영상을 실시간으로 검색하여 추가할 수 있습니다.
               </p>
             </div>
           </div>
+
+          {/* Open Video Search Modal Button */}
+          {onOpenVideoSearch && (
+            <button
+              type="button"
+              onClick={() => onOpenVideoSearch(quickInput || filters.searchQuery || '')}
+              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 shadow-2xs border border-indigo-400/40"
+            >
+              <Globe className="w-3.5 h-3.5 text-indigo-200" />
+              <span>🌐 유튜브 전체 실시간 동영상 검색</span>
+            </button>
+          )}
         </div>
 
         <form onSubmit={handleQuickSubmit} className="flex flex-col sm:flex-row gap-2">
@@ -388,14 +430,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               className="w-full pl-10 pr-4 py-2 text-xs sm:text-sm bg-slate-950/70 border border-slate-700 rounded-lg text-white placeholder:text-slate-400 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
             />
           </div>
-          <button
-            type="submit"
-            disabled={isQuickAnalyzing || !quickInput.trim()}
-            className="px-5 py-2 text-xs sm:text-sm font-bold bg-amber-400 hover:bg-amber-300 active:bg-amber-500 text-slate-950 rounded-lg shadow transition-all flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
-          >
-            <Sparkles className={`w-3.5 h-3.5 text-slate-950 ${isQuickAnalyzing ? 'animate-spin' : ''}`} />
-            <span>{isQuickAnalyzing ? '영상 추출 & AI 분석 중...' : '⚡ 즉시 AI 분석'}</span>
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={isQuickAnalyzing || !quickInput.trim()}
+              className="px-5 py-2 text-xs sm:text-sm font-bold bg-amber-400 hover:bg-amber-300 active:bg-amber-500 text-slate-950 rounded-lg shadow transition-all flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
+            >
+              <Sparkles className={`w-3.5 h-3.5 text-slate-950 ${isQuickAnalyzing ? 'animate-spin' : ''}`} />
+              <span>{isQuickAnalyzing ? '영상 추출 & AI 분석 중...' : '⚡ 즉시 AI 분석'}</span>
+            </button>
+            {onOpenVideoSearch && (
+              <button
+                type="button"
+                onClick={() => onOpenVideoSearch(quickInput)}
+                className="px-3.5 py-2 text-xs sm:text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 rounded-lg transition-colors flex items-center gap-1"
+                title="입력한 검색어로 유튜브 동영상 목록 검색"
+              >
+                <Search className="w-3.5 h-3.5 text-amber-400" />
+                <span>검색</span>
+              </button>
+            )}
+          </div>
         </form>
       </div>
 
@@ -518,15 +573,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="영상 제목, 채널명, 핵심 주제 또는 키워드로 검색..."
+            placeholder="영상 제목, 채널명, 핵심 주제, 키워드로 검색 (예: 엔비디아, 삼프로TV, AI)..."
             value={filters.searchQuery}
             onChange={(e) => setFilters(prev => ({ ...prev, searchQuery: e.target.value }))}
-            className="w-full pl-9 pr-4 py-1.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400 transition-all text-slate-900 placeholder:text-slate-400"
+            className="w-full pl-9 pr-16 py-1.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400 transition-all text-slate-900 placeholder:text-slate-400"
           />
           {filters.searchQuery && (
             <button
               onClick={() => setFilters(prev => ({ ...prev, searchQuery: '' }))}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 font-semibold"
             >
               지우기
             </button>
@@ -572,6 +627,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <option value="unsummarized">요약 대기</option>
             <option value="bookmarked">북마크 영상</option>
           </select>
+
+          {/* Live YouTube Video Search Button */}
+          {onOpenVideoSearch && (
+            <button
+              onClick={() => onOpenVideoSearch(filters.searchQuery || '')}
+              className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1 shrink-0 shadow-2xs"
+              title="유튜브 전체에서 실시간 검색창 열기"
+            >
+              <Search className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">유튜브 검색</span>
+            </button>
+          )}
 
           {/* Reset Filters */}
           {(filters.category !== 'ALL' || filters.channelId !== 'ALL' || filters.dateFilter !== 'all' || filters.searchQuery || filters.statusFilter !== 'all') && (
@@ -619,10 +686,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
+      {/* 4.5 Smart Scope Assistance Banner (When current dateFilter hides matches) */}
+      {filters.searchQuery.trim() && filteredVideos.length === 0 && allTimeSearchMatchesCount > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs text-amber-900 animate-fade-in">
+          <div className="flex items-center gap-2">
+            <span className="w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-bold flex items-center justify-center shrink-0">!</span>
+            <span>
+              현재 선택된 기간(<strong>{filters.dateFilter === '24hours' ? '최근 24시간' : filters.dateFilter === 'today' ? '오늘' : filters.dateFilter}</strong>)에는 일치하는 영상이 없지만, 전체 수집 영상에 <strong>{allTimeSearchMatchesCount}개</strong>의 일치 영상이 있습니다.
+            </span>
+          </div>
+          <button
+            onClick={() => setFilters(prev => ({ ...prev, dateFilter: 'all' }))}
+            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-1 shrink-0"
+          >
+            <span>전체 기간에서 결과 보기</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* 5. Results Count Banner */}
       <div className="flex items-center justify-between text-xs text-slate-500 px-0.5">
         <div className="flex items-center gap-2 flex-wrap">
           <span>총 <strong className="text-slate-900 font-semibold">{filteredVideos.length}</strong>개의 영상 표시 중</span>
+          {filters.searchQuery && (
+            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-semibold rounded border border-indigo-200 flex items-center gap-1">
+              <Search className="w-3 h-3" />
+              "{filters.searchQuery}" 검색 중
+            </span>
+          )}
           {filters.dateFilter === 'today' && (
             <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-medium rounded border border-emerald-200/80">
               🔥 오늘(당일) 업로드 필터
@@ -639,6 +731,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
           )}
         </div>
+
+        {/* Live Search Shortcut */}
+        {filters.searchQuery && onOpenVideoSearch && (
+          <button
+            onClick={() => onOpenVideoSearch(filters.searchQuery)}
+            className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 hover:underline"
+          >
+            <Globe className="w-3 h-3" />
+            유튜브 전체에서 '{filters.searchQuery}' 실시간 검색하기
+          </button>
+        )}
       </div>
 
       {/* 6. Video List / Grid */}
@@ -662,7 +765,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <Tv2 className="w-6 h-6" />
           </div>
           <h3 className="text-base font-bold text-slate-900">
-            {filters.dateFilter === 'today'
+            {filters.searchQuery
+              ? `'${filters.searchQuery}' 관련 영상을 찾지 못했습니다`
+              : filters.dateFilter === 'today'
               ? '오늘(당일) 업로드된 영상이 아직 없거나 동기화 대기 중입니다'
               : filters.dateFilter === '24hours'
               ? '최근 24시간 이내에 업로드된 영상이 아직 없습니다'
@@ -671,10 +776,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               : '조건에 일치하는 영상이 없습니다'}
           </h3>
           <p className="text-xs sm:text-sm text-slate-500 mt-1.5 max-w-md mx-auto leading-relaxed">
-            등록된 채널의 실시간 RSS 업로드 피드를 즉시 검색하고 Gemini AI로 핵심 내용을 요약해보세요.
+            {filters.searchQuery
+              ? `유튜브 전체에서 '${filters.searchQuery}' 동영상을 실시간 검색하거나, 기간 필터를 변경해보세요.`
+              : '등록된 채널의 실시간 RSS 업로드 피드를 즉시 검색하고 Gemini AI로 핵심 내용을 요약해보세요.'}
           </p>
           
           <div className="mt-5 flex items-center justify-center gap-2.5 flex-wrap">
+            {/* If searching, give YouTube real-time search button */}
+            {filters.searchQuery && onOpenVideoSearch && (
+              <button
+                onClick={() => onOpenVideoSearch(filters.searchQuery)}
+                className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow transition-colors inline-flex items-center gap-1.5"
+              >
+                <Globe className="w-3.5 h-3.5 text-amber-300" />
+                <span>🌐 유튜브 전체에서 '{filters.searchQuery}' 실시간 검색</span>
+              </button>
+            )}
+
             <button
               onClick={onRefreshAndSummarize24h}
               disabled={isProcessing}
@@ -683,8 +801,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
               <span>{isProcessing ? '실시간 새로고침 중...' : '🔥 실시간 최신 영상 가져오기'}</span>
             </button>
+
             <button
-              onClick={() => setFilters(prev => ({ ...prev, dateFilter: 'all' }))}
+              onClick={() => setFilters(prev => ({ ...prev, dateFilter: 'all', searchQuery: '' }))}
               className="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors inline-flex items-center gap-1.5"
             >
               전체 수집 영상 ({videos.length}개) 보기
