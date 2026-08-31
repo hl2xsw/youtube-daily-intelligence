@@ -17,7 +17,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { YouTubeVideo, YouTubeVideoSearchResult, YouTubeChannel } from '../types';
-import { searchYouTubeVideos } from '../utils/youtubeService';
+import { searchYouTubeVideos, searchGoogleYouTubeVideos, searchConfiguredChannels } from '../utils/youtubeService';
 import { useToast } from './Toast';
 
 interface VideoSearchModalProps {
@@ -61,6 +61,7 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
   const { showToast } = useToast();
   const safeInitialQuery = typeof initialQuery === 'string' ? initialQuery : '';
   const [query, setQuery] = useState(safeInitialQuery);
+  const [searchEngine, setSearchEngine] = useState<'google' | 'youtube' | 'channels'>('google');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [sortBy, setSortBy] = useState<'relevance' | 'date' | 'viewCount'>('relevance');
   const [isLoading, setIsLoading] = useState(false);
@@ -80,20 +81,21 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
       const qStr = typeof initialQuery === 'string' ? initialQuery.trim() : '';
       if (qStr) {
         setQuery(qStr);
-        performSearch(qStr, dateFilter, sortBy);
+        performSearch(qStr, searchEngine, dateFilter, sortBy);
       } else if (!hasSearched && query && typeof query === 'string' && query.trim()) {
-        performSearch(query.trim(), dateFilter, sortBy);
+        performSearch(query.trim(), searchEngine, dateFilter, sortBy);
       }
     }
   }, [isOpen, initialQuery]);
 
   const performSearch = async (
     searchQuery: string,
+    engine = searchEngine,
     filter = dateFilter,
     sort = sortBy
   ) => {
     const q = typeof searchQuery === 'string' ? searchQuery.trim() : '';
-    if (!q) {
+    if (!q && engine !== 'channels') {
       showToast('검색어를 입력해주세요.', 'info');
       return;
     }
@@ -101,11 +103,38 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
     setIsLoading(true);
     setHasSearched(true);
     try {
-      const data = await searchYouTubeVideos(q, {
-        dateFilter: filter,
-        sortBy: sort,
-        limit: 35
-      });
+      let data: YouTubeVideoSearchResult[] = [];
+
+      if (engine === 'google') {
+        data = await searchGoogleYouTubeVideos(q, {
+          dateFilter: filter,
+          sortBy: sort,
+          limit: 35
+        });
+      } else if (engine === 'channels') {
+        const chanVideos = await searchConfiguredChannels(channels, q);
+        data = chanVideos.map(v => ({
+          videoId: v.videoId,
+          channelId: v.channelId,
+          channelTitle: v.channelTitle,
+          channelThumbnail: v.channelThumbnail,
+          title: v.title,
+          description: v.description,
+          timeAgo: v.relativeTimeText || '최근',
+          viewCountText: v.viewCount ? `${v.viewCount.toLocaleString()}회` : undefined,
+          duration: v.duration,
+          thumbnailUrl: v.thumbnailUrl,
+          videoUrl: v.videoUrl,
+          publishedAt: v.publishedAt
+        }));
+      } else {
+        data = await searchYouTubeVideos(q, {
+          dateFilter: filter,
+          sortBy: sort,
+          limit: 35
+        });
+      }
+
       setResults(Array.isArray(data) ? data : []);
       if (!data || data.length === 0) {
         showToast(`'${q}' 관련 동영상을 찾을 수 없습니다. 검색어나 필터를 변경해보세요.`, 'info');
@@ -121,26 +150,35 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (typeof query === 'string') {
-      performSearch(query, dateFilter, sortBy);
+      performSearch(query, searchEngine, dateFilter, sortBy);
     }
   };
 
   const handleKeywordClick = (kw: string) => {
     setQuery(kw);
-    performSearch(kw, dateFilter, sortBy);
+    performSearch(kw, searchEngine, dateFilter, sortBy);
+  };
+
+  const handleEngineChange = (newEngine: 'google' | 'youtube' | 'channels') => {
+    setSearchEngine(newEngine);
+    if (typeof query === 'string' && query.trim()) {
+      performSearch(query.trim(), newEngine, dateFilter, sortBy);
+    } else if (newEngine === 'channels') {
+      performSearch('', newEngine, dateFilter, sortBy);
+    }
   };
 
   const handleFilterChange = (newDateFilter: 'all' | 'today' | 'week' | 'month') => {
     setDateFilter(newDateFilter);
     if (typeof query === 'string' && query.trim()) {
-      performSearch(query.trim(), newDateFilter, sortBy);
+      performSearch(query.trim(), searchEngine, newDateFilter, sortBy);
     }
   };
 
   const handleSortChange = (newSort: 'relevance' | 'date' | 'viewCount') => {
     setSortBy(newSort);
     if (typeof query === 'string' && query.trim()) {
-      performSearch(query.trim(), dateFilter, newSort);
+      performSearch(query.trim(), searchEngine, dateFilter, newSort);
     }
   };
 
@@ -242,6 +280,51 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
 
         {/* Search & Filter Bar */}
         <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-50/80 space-y-3">
+          {/* Search Engine Switcher Tabs */}
+          <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2.5">
+            <span className="text-[11px] font-bold text-slate-500 shrink-0">검색 엔진:</span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => handleEngineChange('google')}
+                className={`px-3 py-1 text-xs rounded-lg font-bold transition-all flex items-center gap-1.5 shadow-2xs ${
+                  searchEngine === 'google'
+                    ? 'bg-blue-600 text-white ring-2 ring-blue-400/30'
+                    : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                <span>🌐 Google 검색 엔진 (추천)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleEngineChange('youtube')}
+                className={`px-3 py-1 text-xs rounded-lg font-bold transition-all flex items-center gap-1.5 shadow-2xs ${
+                  searchEngine === 'youtube'
+                    ? 'bg-red-600 text-white ring-2 ring-red-400/30'
+                    : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                <Tv2 className="w-3.5 h-3.5" />
+                <span>⚡ YouTube 실시간</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleEngineChange('channels')}
+                className={`px-3 py-1 text-xs rounded-lg font-bold transition-all flex items-center gap-1.5 shadow-2xs ${
+                  searchEngine === 'channels'
+                    ? 'bg-slate-900 text-white ring-2 ring-slate-400/30'
+                    : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                <span>📺 내 등록 채널 ({channels.length}개)</span>
+              </button>
+            </div>
+          </div>
+
           <form onSubmit={handleSearchSubmit} className="flex gap-2">
             <div className="relative flex-1">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -249,7 +332,13 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="검색어 (예: 엔비디아 실적, 삼프로TV, AI 최신 기술) 또는 유튜브 영상 URL..."
+                placeholder={
+                  searchEngine === 'google'
+                    ? "Google 검색 엔진으로 유튜브 검색 (예: 슈카월드 최신, 엔비디아 실적 분석, 삼프로TV)..."
+                    : searchEngine === 'channels'
+                    ? "내 등록 채널에서 검색 (비워두면 모든 등록 채널의 최신 영상 조회)..."
+                    : "유튜브 전체 실시간 검색어 또는 영상 URL..."
+                }
                 className="w-full pl-10 pr-10 py-2 text-xs sm:text-sm bg-white border border-slate-300 rounded-lg text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
                 autoFocus
               />
@@ -265,7 +354,7 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
             </div>
             <button
               type="submit"
-              disabled={isLoading || !query.trim()}
+              disabled={isLoading || (!query.trim() && searchEngine !== 'channels')}
               className="px-5 py-2 text-xs sm:text-sm font-bold bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white rounded-lg transition-colors flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
             >
               {isLoading ? (
@@ -276,7 +365,7 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
               ) : (
                 <>
                   <Search className="w-3.5 h-3.5 text-amber-400" />
-                  <span>실시간 검색</span>
+                  <span>{searchEngine === 'google' ? 'Google 검색' : '실시간 검색'}</span>
                 </>
               )}
             </button>

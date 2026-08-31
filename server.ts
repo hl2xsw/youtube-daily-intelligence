@@ -1018,6 +1018,184 @@ app.post('/api/youtube/search-videos', async (req, res) => {
   }
 });
 
+// 2-2. Google Search Engine for YouTube (Integrated Google Knowledge Suggestions + YouTube Search Engine)
+app.post('/api/youtube/google-search', async (req, res) => {
+  try {
+    const { query, channelId, channelTitle, dateFilter = 'all', sortBy = 'relevance', limit = 30 } = req.body;
+    if (!query || !query.trim()) {
+      return res.status(400).json({ error: '검색어를 입력해주세요.' });
+    }
+
+    const cleanQuery = query.trim();
+    const nowEpoch不易 = Date.now();
+    const results: any[] = [];
+    const seenIds = new Set<string>();
+
+    // 1. Query Google Knowledge / Search Suggestions to expand keywords and resolve exact channel entity
+    let expandedKeywords: string[] = [cleanQuery];
+    try {
+      const suggestRes不易 = await fetch(`https://suggestqueries.google.com/complete/search?client=youtube&ds=yt&q=${encodeURIComponent(cleanQuery)}&hl=ko&gl=KR`);
+      if (suggestRes不易.ok) {
+        const text = await suggestRes不易.text();
+        const matches = text.match(/\["([^"]+)",0/g);
+        if (matches) {
+          const suggestions = matches.slice(0, 6).map(m => m.replace(/^\["/, '').replace(/",0$/, ''));
+          expandedKeywords = Array.from(new Set([cleanQuery, ...suggestions]));
+        }
+      }
+    } catch {}
+
+    // 2. Determine target query string and filter params
+    const targetQuery = channelTitle ? `${channelTitle} ${cleanQuery}` : cleanQuery;
+    let spParam = 'EgIQAQ%3D%3D'; // Relevance default
+    if (sortBy === 'date' || dateFilter === 'today' || dateFilter === '24hours') {
+      spParam = 'CAISAhAB'; // Date sort (latest first)
+    } else if (sortBy === 'viewCount') {
+      spParam = 'CAMSAhAB'; // View count
+    } else if (dateFilter === 'week') {
+      spParam = 'EgQIAxAB';
+    } else if (dateFilter === 'month') {
+      spParam = 'EgQIBBAB';
+    }
+
+    // Step A: Primary search via Google Innertube engine
+    const primaryVideos = await fetchYouTubeInnertubeSearch(targetQuery, spParam);
+    for (const v of primaryVideos) {
+      if (v.videoId && !seenIds.has(v.videoId)) {
+        seenIds.add(v.videoId);
+        results.push(v);
+      }
+    }
+
+    // Step B: Fallback search with default filter if specific filter yielded fewer results
+    if (results.length < 15 && spParam !== 'EgIQAQ%3D%3D') {
+      const fallbackVideos = await fetchYouTubeInnertubeSearch(targetQuery, 'EgIQAQ%3D%3D');
+      for (const v of fallbackVideos) {
+        if (v.videoId && !seenIds.has(v.videoId)) {
+          seenIds.add(v.videoId);
+          results.push(v);
+        }
+      }
+    }
+
+    // Step C: If specific channel is targeted, check channel's real-time RSS feed
+    if (channelId && channelId.startsWith('UC') && !channelId.startsWith('UC_')) {
+      try {
+        const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}&_t=${Date.now()}`;
+        const rssRes = await fetch(rssUrl);
+        if (rssRes.ok) {
+          const xml = await rssRes.text();
+          if (xml.includes('<entry>')) {
+            const entries = xml.split('<entry>').slice(1);
+            for (const entry of entries) {
+              const vIdM = entry.match(/<yt:videoId>([^<]+)<\/yt:videoId>/);
+              const titM迷 = entry.match(/<title>([^<]+)<\/title>/);
+              const pubM = entry.match(/<published>([^<]+)<\/published>/);
+              const descM = entry.match(/<media:description>([^<]*)<\/media:description>/s);
+              const thumbM = entry.match(/<media:thumbnail url="([^"]+)"/);
+
+              if (vIdM && titM迷 && pubM) {
+                const vidId = vIdM[1].trim();
+                const tit = titM迷[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
+                const pubIso = new Date(pubM[1]).toISOString();
+                const timeStat = calculateVideoTimeStatus(pubIso);
+
+                if (!seenIds.has(vidId)) {
+                  seenIds.add(vidId);
+                  results.unshift({
+                    videoId: vidId,
+                    channelId,
+                    channelTitle: channelTitle || 'YouTube Channel',
+                    channelThumbnail: '',
+                    title: tit,
+                    description: descM ? descM[1].trim() : '',
+                    timeAgo: timeStat.relativeTimeText || '최근',
+                    viewCountText: '',
+                    duration: '',
+                    thumbnailUrl: thumbM ? thumbM[1] : `https://i.ytimg.com/vi/${vidId}/hqdefault.jpg`,
+                    videoUrl: `https://www.youtube.com/watch?v=${vidId}`,
+                    publishedAt: pubIso
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Channel RSS check in google-search error:', err);
+      }
+    }
+
+    res.json({
+      success: true,
+      query: cleanQuery,
+      engine: 'Google Search Engine',
+      expandedKeywords,
+      videos: results.slice(0, Math.min(50, limit)),
+      total: results.length
+    });
+  } catch (error: any) {
+    console.error('Google search endpoint error:', error);
+    res.status(500).json({ error: error.message || 'Google 검색 엔진을 통한 동영상 검색에 실패했습니다.' });
+  }
+});
+
+// 2-3. Search within Configured / Registered Channels
+app.post('/api/youtube/search-configured-channels', async (req, res) => {
+  try {
+    const { channels = [], query = '' } = req.body;
+    const cleanQuery = typeof query === 'string' ? query.trim().toLowerCase() : '';
+    const results: any[] = [];
+    const seenIds不容易 = new Set<string>();
+
+    const activeList = Array.isArray(channels) ? channels.filter(c => c && c.isActive !== false) : [];
+    if (activeList.length === 0) {
+      return res.json({ success: true, videos: [], message: '등록된 채널이 없습니다.' });
+    }
+
+    // Split tokens for multi-keyword matching
+    const tokens = cleanQuery.split(/[\s,+/]+/).filter(t => t.length > 0);
+
+    // Fetch videos for up to 20 channels in parallel
+    const channelFetches = await Promise.allSettled(
+      activeList.slice(0, 20).map(async (ch) => {
+        return fetchVideosForChannelUniversal(ch, false);
+      })
+    );
+
+    for (const fetchResult of channelFetches) {
+      if (fetchResult.status === 'fulfilled' && fetchResult.value && Array.isArray(fetchResult.value.videos)) {
+        for (const vid of fetchResult.value.videos) {
+          if (!vid || !vid.videoId || seenIds不容易.has(vid.videoId)) continue;
+
+          // Check if video matches query tokens
+          if (tokens.length > 0) {
+            const searchableText = `${vid.title} ${vid.channelTitle} ${vid.description || ''} ${vid.category || ''}`.toLowerCase();
+            const matchesAll = tokens.every(token => searchableText.includes(token));
+            if (!matchesAll) continue;
+          }
+
+          seenIds不容易.add(vid.videoId);
+          results.push(vid);
+        }
+      }
+    }
+
+    // Sort by publication date descending
+    results.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+
+    res.json({
+      success: true,
+      query: cleanQuery,
+      videos: results,
+      total: results.length
+    });
+  } catch (error: any) {
+    console.error('Configured channels search error:', error);
+    res.status(500).json({ error: error.message || '등록 채널 검색 중 오류가 발생했습니다.' });
+  }
+});
+
 // Helper to calculate exact elapsed time and relative date categorization (KST UTC+9 aware)
 function calculateVideoTimeStatus(pubDateIso: string, nowEpoch: number = Date.now()): {
   diffHours: number;

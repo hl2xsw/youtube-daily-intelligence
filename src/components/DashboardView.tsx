@@ -664,11 +664,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           {onOpenVideoSearch && (
             <button
               type="submit"
-              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer"
-              title="유튜브 전체에서 실시간 검색"
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer"
+              title="Google 검색 엔진으로 유튜브 실시간 검색"
             >
               <Globe className="w-3.5 h-3.5 text-amber-300" />
-              <span>유튜브 실시간 검색</span>
+              <span>Google 실시간 검색</span>
             </button>
           )}
         </form>

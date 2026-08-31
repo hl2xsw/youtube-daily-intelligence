@@ -359,10 +359,24 @@ export async function searchYouTubeVideos(
     dateFilter?: 'all' | 'today' | '24hours' | 'week' | 'month';
     sortBy?: 'relevance' | 'date' | 'viewCount';
     limit?: number;
+    useGoogleEngine?: boolean;
+    channelId?: string;
+    channelTitle?: string;
   }
 ): Promise<YouTubeVideoSearchResult[]> {
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
+
+  // If user explicitly chose Google Engine, route to Google search
+  if (options?.useGoogleEngine) {
+    return searchGoogleYouTubeVideos(cleanQuery, {
+      dateFilter: options.dateFilter,
+      sortBy: options.sortBy,
+      limit: options.limit,
+      channelId: options.channelId,
+      channelTitle: options.channelTitle
+    });
+  }
 
   try {
     const res = await fetch('/api/youtube/search-videos', {
@@ -383,7 +397,78 @@ export async function searchYouTubeVideos(
       }
     }
   } catch (e) {
-    console.warn('Backend video search error:', e);
+    console.warn('Backend video search error, falling back to Google engine:', e);
+  }
+
+  // Fallback to Google engine
+  return searchGoogleYouTubeVideos(cleanQuery, options);
+}
+
+// Dedicated Google Search Engine for YouTube Videos
+export async function searchGoogleYouTubeVideos(
+  query: string,
+  options?: {
+    dateFilter?: 'all' | 'today' | '24hours' | 'week' | 'month';
+    sortBy?: 'relevance' | 'date' | 'viewCount';
+    channelId?: string;
+    channelTitle?: string;
+    limit?: number;
+  }
+): Promise<YouTubeVideoSearchResult[]> {
+  const cleanQuery = query.trim();
+  if (!cleanQuery) return [];
+
+  try {
+    const res = await fetch('/api/youtube/google-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: cleanQuery,
+        dateFilter: options?.dateFilter || 'all',
+        sortBy: options?.sortBy || 'relevance',
+        channelId: options?.channelId,
+        channelTitle: options?.channelTitle,
+        limit: options?.limit || 30
+      })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.videos)) {
+        return data.videos;
+      }
+    }
+  } catch (e) {
+    console.warn('Google search video error:', e);
+  }
+
+  return [];
+}
+
+// Search within registered / configured channels
+export async function searchConfiguredChannels(
+  channels: YouTubeChannel[],
+  query: string
+): Promise<YouTubeVideo[]> {
+  const cleanQuery = query.trim();
+  try {
+    const res = await fetch('/api/youtube/search-configured-channels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        channels,
+        query: cleanQuery
+      })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.videos)) {
+        return data.videos;
+      }
+    }
+  } catch (e) {
+    console.warn('Configured channels search error:', e);
   }
 
   return [];
