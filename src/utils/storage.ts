@@ -262,12 +262,16 @@ export function loadVideos(): YouTubeVideo[] {
       // Keep real YouTube videos within 30 days (720 hours) and calculate fresh time status
       const validOnly = parsed
         .filter(v => {
-          if (!v || typeof v.videoId !== 'string' || !isRealYouTubeVideoId(v.videoId)) return false;
-          if (v.id?.startsWith('vid-') || v.videoId.includes('shuka_') || v.videoId.includes('jocoding_') || v.videoId.includes('mock')) return false;
+          if (!v || typeof v.videoId !== 'string') return false;
+          // Discard mock items without real videoId
+          if (v.videoId.includes('mock_') || v.videoId.startsWith('mock-')) return false;
+          if (v.id?.startsWith('mock-')) return false;
           
           const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
+          if (isNaN(pubTime) || pubTime === 0) return true;
           const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
-          return diffHours >= -0.5 && diffHours <= 720.0;
+          // Allow future timestamps due to clock drift or live premiere scheduling, retain up to 30 days
+          return diffHours <= 720.0;
         })
         .map(v => {
           const timeStatus = calculateVideoTimeStatus(v.publishedAt || v.createdAt || new Date().toISOString(), nowEpoch);
@@ -298,9 +302,11 @@ export function saveVideos(videos: YouTubeVideo[]): void {
     // Retain up to 30 days to allow comprehensive date filtering (today, 24h, yesterday, recent 3/7/30 days)
     const filtered = videos.filter(v => {
       if (!v || typeof v.videoId !== 'string') return false;
+      if (v.videoId.includes('mock_') || v.videoId.startsWith('mock-') || v.id?.startsWith('mock-')) return false;
       const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
+      if (isNaN(pubTime) || pubTime === 0) return true;
       const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
-      return diffHours >= -0.5 && diffHours <= 720.0;
+      return diffHours <= 720.0;
     });
     localStorage.setItem(VIDEOS_KEY, JSON.stringify(filtered));
   } catch (e) {

@@ -16,7 +16,7 @@ import {
   TrendingUp,
   Loader2
 } from 'lucide-react';
-import { YouTubeVideo, YouTubeVideoSearchResult } from '../types';
+import { YouTubeVideo, YouTubeVideoSearchResult, YouTubeChannel } from '../types';
 import { searchYouTubeVideos } from '../utils/youtubeService';
 import { useToast } from './Toast';
 
@@ -25,8 +25,10 @@ interface VideoSearchModalProps {
   onClose: () => void;
   initialQuery?: string;
   categories?: string[];
+  channels?: YouTubeChannel[];
   existingVideos?: YouTubeVideo[];
   onAddVideo?: (video: YouTubeVideo) => void;
+  onAddChannel?: (channel: Omit<YouTubeChannel, 'id' | 'addedAt'>) => Promise<void> | void;
   onQuickAnalyze?: (input: string) => Promise<void>;
   isQuickAnalyzing?: boolean;
 }
@@ -49,8 +51,10 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
   onClose,
   initialQuery = '',
   categories = ['IT/테크', '경제/재테크', '비즈니스/스타트업', '과학/지식', '뉴스/시사', '기타'],
+  channels = [],
   existingVideos = [],
   onAddVideo,
+  onAddChannel,
   onQuickAnalyze,
   isQuickAnalyzing = false
 }) => {
@@ -440,21 +444,62 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
                         </div>
 
                         {/* Channel & Meta */}
-                        <div className="flex items-center gap-2 mb-1.5">
-                          {video.channelThumbnail ? (
-                            <img
-                              src={video.channelThumbnail}
-                              alt={video.channelTitle}
-                              className="w-5 h-5 rounded-full object-cover border border-slate-200"
-                            />
-                          ) : (
-                            <div className="w-5 h-5 rounded-full bg-slate-800 text-white text-[10px] font-bold flex items-center justify-center">
-                              {video.channelTitle.charAt(0)}
-                            </div>
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {video.channelThumbnail ? (
+                              <img
+                                src={video.channelThumbnail}
+                                alt={video.channelTitle}
+                                className="w-5 h-5 rounded-full object-cover border border-slate-200 shrink-0"
+                              />
+                            ) : (
+                              <div className="w-5 h-5 rounded-full bg-slate-800 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                                {video.channelTitle.charAt(0)}
+                              </div>
+                            )}
+                            <span className="text-xs font-semibold text-slate-700 truncate">
+                              {video.channelTitle}
+                            </span>
+                          </div>
+
+                          {/* 1-click Channel Subscription */}
+                          {onAddChannel && (
+                            (() => {
+                              const isChannelRegistered = channels.some(c => 
+                                (video.channelId && c.channelId === video.channelId) || 
+                                c.title.toLowerCase() === video.channelTitle.toLowerCase()
+                              );
+                              if (isChannelRegistered) {
+                                return (
+                                  <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded font-medium shrink-0">
+                                    구독중
+                                  </span>
+                                );
+                              }
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onAddChannel({
+                                      channelId: video.channelId || `ch-${video.channelTitle}`,
+                                      title: video.channelTitle,
+                                      handle: `@${video.channelTitle.replace(/\s+/g, '')}`,
+                                      thumbnailUrl: video.channelThumbnail || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
+                                      category: categories[0] || 'IT/테크',
+                                      isActive: true,
+                                      subscriberCount: '10만+'
+                                    });
+                                  }}
+                                  className="text-[10px] font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded transition-colors shrink-0 flex items-center gap-0.5"
+                                  title="이 채널을 일일 모니터링 목록에 추가"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  <span>채널 모니터링</span>
+                                </button>
+                              );
+                            })()
                           )}
-                          <span className="text-xs font-semibold text-slate-700 truncate">
-                            {video.channelTitle}
-                          </span>
                         </div>
 
                         {/* Title */}

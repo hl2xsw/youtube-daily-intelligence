@@ -103,15 +103,14 @@ function AppContent() {
       console.warn('Sync videos error:', e);
     }
 
-    // Filter valid channels and retain up to 30 days (720h) with fresh timeStatus
-    const validChannelIds = new Set(targetChannels.map(c => c.channelId));
-    const validTitles = new Set(targetChannels.map(c => c.title));
+    // Retain up to 30 days (720h) with fresh timeStatus
     const cleanedList = updatedList
       .filter(v => {
-        if (!validChannelIds.has(v.channelId) && !validTitles.has(v.channelTitle)) return false;
+        if (!v || !v.videoId) return false;
         const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
+        if (isNaN(pubTime) || pubTime === 0) return true;
         const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
-        return diffHours >= -0.5 && diffHours <= 720.0;
+        return diffHours <= 720.0;
       })
       .map(v => {
         const timeStatus = calculateVideoTimeStatus(v.publishedAt, nowEpoch);
@@ -136,12 +135,8 @@ function AppContent() {
     const initSettings = loadSettings();
     const initCategories = loadCategories();
 
-    const validChannelIds = new Set(initChannels.map(c => c.channelId));
-    const validTitles = new Set(initChannels.map(c => c.title));
-    const validVideos = initVideos.filter(v => validChannelIds.has(v.channelId) || validTitles.has(v.channelTitle));
-
     setChannels(initChannels);
-    setVideos(validVideos);
+    setVideos(initVideos);
     setReports(initReports);
     setSettings(initSettings);
     setCategories(initCategories);
@@ -149,7 +144,7 @@ function AppContent() {
     // ALWAYS automatically perform a live background sync on app startup
     // This immediately brings in the latest videos (5m ago, 1h ago, etc.) from all active channels
     if (initChannels.length > 0) {
-      syncChannelVideos(initChannels, validVideos).then(synced => {
+      syncChannelVideos(initChannels, initVideos).then(synced => {
         if (synced && synced.length > 0) {
           setVideos(synced);
           saveVideos(synced);
@@ -162,11 +157,6 @@ function AppContent() {
       if (hasChanges) {
         setChannels(updatedChannels);
         saveChannels(updatedChannels);
-        const synced = await syncChannelVideos(updatedChannels, validVideos);
-        if (synced && synced.length > 0) {
-          setVideos(synced);
-          saveVideos(synced);
-        }
       }
     });
   }, [syncChannelVideos]);
@@ -279,15 +269,13 @@ function AppContent() {
       }
 
       // Clean list: keep within 30 days (720 hours) and calculate fresh time status
-      const validChannelsSet = new Set(channels.map(c => c.channelId));
-      const validTitlesSet = new Set(channels.map(c => c.title));
-
       const cleanedList = Array.from(mergedMap.values())
         .filter(v => {
-          if (!validChannelsSet.has(v.channelId) && !validTitlesSet.has(v.channelTitle)) return false;
+          if (!v || !v.videoId) return false;
           const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
+          if (isNaN(pubTime) || pubTime === 0) return true;
           const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
-          return diffHours >= -0.5 && diffHours <= 720.0;
+          return diffHours <= 720.0;
         })
         .map(v => {
           const timeStatus = calculateVideoTimeStatus(v.publishedAt, nowEpoch);
@@ -616,22 +604,34 @@ function AppContent() {
 
   // Add video selected from VideoSearchModal to dashboard and open detail or toast
   const handleAddVideoFromSearch = (newVid: YouTubeVideo) => {
-    const existsIdx = videos.findIndex(v => v.videoId === newVid.videoId);
+    const nowEpoch = Date.now();
+    const timeStatus = calculateVideoTimeStatus(newVid.publishedAt, nowEpoch);
+    const enrichedVid: YouTubeVideo = {
+      ...newVid,
+      isWithin24h: timeStatus.isWithin24h,
+      isToday: timeStatus.isToday,
+      isYesterday: timeStatus.isYesterday,
+      relativeTimeText: timeStatus.relativeTimeText || newVid.relativeTimeText
+    };
+
+    const existsIdx = videos.findIndex(v => v.videoId === enrichedVid.videoId);
     let updated: YouTubeVideo[] = [];
     if (existsIdx >= 0) {
       updated = [...videos];
       updated[existsIdx] = {
-        ...newVid,
-        isBookmarked: updated[existsIdx].isBookmarked || newVid.isBookmarked
+        ...enrichedVid,
+        isBookmarked: updated[existsIdx].isBookmarked || enrichedVid.isBookmarked,
+        isSummarized: updated[existsIdx].isSummarized || enrichedVid.isSummarized,
+        summary: updated[existsIdx].summary || enrichedVid.summary
       };
     } else {
-      updated = [newVid, ...videos];
+      updated = [enrichedVid, ...videos];
     }
     updateVideos(updated);
-    if (newVid.isSummarized) {
-      setSelectedVideo(newVid);
+    if (enrichedVid.isSummarized) {
+      setSelectedVideo(enrichedVid);
     }
-    showToast(`'${newVid.title.slice(0, 25)}' 영상이 대시보드에 추가되었습니다!`, 'success');
+    showToast(`'${enrichedVid.title.slice(0, 25)}' 영상이 대시보드에 추가되었습니다!`, 'success');
   };
 
   // Channel Management handlers
@@ -844,9 +844,11 @@ function AppContent() {
         isOpen={isVideoSearchModalOpen}
         initialQuery={videoSearchInitialQuery}
         categories={categories}
+        channels={channels}
         existingVideos={videos}
         onClose={() => setIsVideoSearchModalOpen(false)}
         onAddVideo={handleAddVideoFromSearch}
+        onAddChannel={handleAddChannel}
         onQuickAnalyze={handleQuickAnalyze}
       />
 
