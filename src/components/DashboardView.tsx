@@ -636,7 +636,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <form 
           onSubmit={(e) => {
             e.preventDefault();
-            if (filters.searchQuery.trim() && filteredVideos.length === 0 && onOpenVideoSearch) {
+            if (filters.searchQuery.trim() && onOpenVideoSearch) {
               onOpenVideoSearch(filters.searchQuery.trim());
             }
           }}
@@ -646,10 +646,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="영상 제목, 채널명, 핵심 주제, 키워드로 검색 (엔터 시 실시간 검색 연동)..."
+              placeholder="영상 제목, 채널명, 키워드 검색 (엔터 시 유튜브 실시간 검색)..."
               value={filters.searchQuery}
               onChange={(e) => setFilters(prev => ({ ...prev, searchQuery: e.target.value }))}
-              className="w-full pl-9 pr-16 py-1.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400 transition-all text-slate-900 placeholder:text-slate-400"
+              className="w-full pl-9 pr-16 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400 transition-all text-slate-900 placeholder:text-slate-400 font-medium"
             />
             {filters.searchQuery && (
               <button
@@ -663,13 +663,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
           {onOpenVideoSearch && (
             <button
-              type="button"
-              onClick={() => onOpenVideoSearch(filters.searchQuery || '')}
-              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1 shrink-0 shadow-2xs"
+              type="submit"
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer"
               title="유튜브 전체에서 실시간 검색"
             >
-              <Globe className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">유튜브 검색</span>
+              <Globe className="w-3.5 h-3.5 text-amber-300" />
+              <span>유튜브 실시간 검색</span>
             </button>
           )}
         </form>

@@ -615,6 +615,176 @@ app.post('/api/youtube/search-channels', async (req, res) => {
   }
 });
 
+// Helper to query YouTube Innertube API (Tier 1 Primary Engine)
+async function fetchYouTubeInnertubeSearch(queryStr: string, searchParams?: string): Promise<any[]> {
+  const nowEpoch = Date.now();
+  try {
+    const payload: any = {
+      context: {
+        client: {
+          clientName: 'WEB',
+          clientVersion: '2.20240501.01.00',
+          hl: 'ko',
+          gl: 'KR'
+        }
+      },
+      query: queryStr
+    };
+    if (searchParams) {
+      payload.params = searchParams;
+    }
+
+    const res = await fetch('https://www.youtube.com/youtubei/v1/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Cookie': 'SOCS=CAISNQgDEitib3FfaWRlbnRpdHlmc2J1aWxkdG9vbHNsYXVkZXJfc2VydmVyXzIwMjQwMjI1LjA1X3AwGgJrbxACGgJrbw; YSC=a; GPS=1'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    const parsedVideos: any[] = [];
+    const seenIds = new Set<string>();
+
+    const traverse = (node: any) => {
+      if (!node || typeof node !== 'object') return;
+
+      // 1. videoRenderer parser
+      if (node.videoRenderer) {
+        const vr = node.videoRenderer;
+        if (vr.videoId && !seenIds.has(vr.videoId)) {
+          seenIds.add(vr.videoId);
+          const title = vr.title?.runs?.map((r: any) => r.text).join('') || vr.title?.simpleText || '';
+          const channelTitle = vr.ownerText?.runs?.map((r: any) => r.text).join('') || vr.shortBylineText?.runs?.map((r: any) => r.text).join('') || '';
+          const channelId = vr.ownerText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || vr.shortBylineText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || '';
+          const channelThumbnail = vr.channelThumbnailSupportedRenderers?.channelThumbnailWithLinkRenderer?.thumbnail?.thumbnails?.[0]?.url || '';
+          const timeAgo = vr.publishedTimeText?.simpleText || '';
+          const viewCountText = vr.viewCountText?.simpleText || vr.viewCountText?.runs?.map((r: any) => r.text).join('') || '';
+          const lengthText = vr.lengthText?.simpleText || '';
+          const desc = vr.detailedMetadataSnippets?.[0]?.snippetText?.runs?.map((r: any) => r.text).join('') || vr.descriptionSnippet?.runs?.map((r: any) => r.text).join('') || '';
+          
+          let thumbnail = vr.thumbnail?.thumbnails?.slice(-1)[0]?.url || `https://i.ytimg.com/vi/${vr.videoId}/hqdefault.jpg`;
+          if (thumbnail.startsWith('//')) thumbnail = 'https:' + thumbnail;
+
+          if (title.trim()) {
+            const approxPubDate = parseRelativeTimeTextToIso(timeAgo, nowEpoch);
+            parsedVideos.push({
+              videoId: vr.videoId,
+              channelId: channelId || `ch-${vr.videoId}`,
+              channelTitle: channelTitle.trim() || 'YouTube Creator',
+              channelThumbnail: channelThumbnail.startsWith('//') ? 'https:' + channelThumbnail : channelThumbnail,
+              title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+              description: desc.trim(),
+              timeAgo: timeAgo.trim(),
+              viewCountText: viewCountText.trim(),
+              duration: lengthText.trim(),
+              thumbnailUrl: thumbnail,
+              videoUrl: `https://www.youtube.com/watch?v=${vr.videoId}`,
+              publishedAt: approxPubDate
+            });
+          }
+        }
+      }
+
+      // 2. compactVideoRenderer / gridVideoRenderer
+      if (node.compactVideoRenderer || node.gridVideoRenderer) {
+        const cvr = node.compactVideoRenderer || node.gridVideoRenderer;
+        if (cvr.videoId && !seenIds.has(cvr.videoId)) {
+          seenIds.add(cvr.videoId);
+          const title = cvr.title?.runs?.map((r: any) => r.text).join('') || cvr.title?.simpleText || '';
+          const channelTitle = cvr.shortBylineText?.runs?.map((r: any) => r.text).join('') || cvr.ownerText?.runs?.map((r: any) => r.text).join('') || '';
+          const channelId = cvr.shortBylineText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || cvr.ownerText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || '';
+          const timeAgo = cvr.publishedTimeText?.simpleText || '';
+          const viewCountText = cvr.viewCountText?.simpleText || '';
+          const lengthText = cvr.lengthText?.simpleText || '';
+          let thumbnail = cvr.thumbnail?.thumbnails?.slice(-1)[0]?.url || `https://i.ytimg.com/vi/${cvr.videoId}/hqdefault.jpg`;
+          if (thumbnail.startsWith('//')) thumbnail = 'https:' + thumbnail;
+
+          if (title.trim()) {
+            const approxPubDate = parseRelativeTimeTextToIso(timeAgo, nowEpoch);
+            parsedVideos.push({
+              videoId: cvr.videoId,
+              channelId: channelId || `ch-${cvr.videoId}`,
+              channelTitle: channelTitle.trim() || 'YouTube Creator',
+              channelThumbnail: '',
+              title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+              description: '',
+              timeAgo: timeAgo.trim(),
+              viewCountText: viewCountText.trim(),
+              duration: lengthText.trim(),
+              thumbnailUrl: thumbnail,
+              videoUrl: `https://www.youtube.com/watch?v=${cvr.videoId}`,
+              publishedAt: approxPubDate
+            });
+          }
+        }
+      }
+
+      // 3. lockupViewModel parser (modern YouTube search structure)
+      if (node.lockupViewModel) {
+        const lvm = node.lockupViewModel;
+        const contentId = lvm.contentId;
+        if (contentId && !seenIds.has(contentId)) {
+          seenIds.add(contentId);
+          const title = lvm.metadata?.lockupMetadataViewModel?.title?.content || 
+                        lvm.rendererContext?.accessibilityContext?.label || '';
+          const metadataItems = lvm.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel?.metadataRows || [];
+          
+          let viewCountNumStr = '';
+          let timeAgoStr = '';
+          let chTitle = '';
+
+          for (const row of metadataItems) {
+            for (const part of (row.metadataParts || [])) {
+              const txt = part.text?.content || '';
+              if (txt.includes('조회수') || txt.includes('views')) {
+                viewCountNumStr = txt;
+              } else if (txt.includes('전') || txt.includes('ago') || txt.includes('스트리밍') || txt.includes('실시간')) {
+                timeAgoStr = txt;
+              } else if (!chTitle && txt.length > 0 && !txt.includes('조회수') && !txt.includes('분') && !txt.includes('초')) {
+                chTitle = txt;
+              }
+            }
+          }
+
+          if (title.trim()) {
+            const approxPubDate = parseRelativeTimeTextToIso(timeAgoStr, nowEpoch);
+            parsedVideos.push({
+              videoId: contentId,
+              channelId: `ch-${contentId}`,
+              channelTitle: chTitle || 'YouTube Creator',
+              channelThumbnail: '',
+              title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+              description: '',
+              timeAgo: timeAgoStr.trim(),
+              viewCountText: viewCountNumStr.trim(),
+              duration: '',
+              thumbnailUrl: `https://i.ytimg.com/vi/${contentId}/hqdefault.jpg`,
+              videoUrl: `https://www.youtube.com/watch?v=${contentId}`,
+              publishedAt: approxPubDate
+            });
+          }
+        }
+      }
+
+      for (const k of Object.keys(node)) {
+        traverse(node[k]);
+      }
+    };
+
+    traverse(data);
+    return parsedVideos;
+  } catch (err) {
+    console.warn('Innertube search error:', err);
+    return [];
+  }
+}
+
 // Real-Time YouTube Video Search Endpoint
 app.post('/api/youtube/search-videos', async (req, res) => {
   try {
@@ -668,175 +838,6 @@ app.post('/api/youtube/search-videos', async (req, res) => {
         console.warn('Direct video lookup fallback to standard search:', directErr);
       }
     }
-
-    // Helper to query YouTube Innertube API (Tier 1 Primary Engine)
-    const fetchYouTubeInnertubeSearch = async (queryStr: string, searchParams?: string) => {
-      try {
-        const payload: any = {
-          context: {
-            client: {
-              clientName: 'WEB',
-              clientVersion: '2.20240501.01.00',
-              hl: 'ko',
-              gl: 'KR'
-            }
-          },
-          query: queryStr
-        };
-        if (searchParams) {
-          payload.params = searchParams;
-        }
-
-        const res = await fetch('https://www.youtube.com/youtubei/v1/search', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Cookie': 'SOCS=CAISNQgDEitib3FfaWRlbnRpdHlmc2J1aWxkdG9vbHNsYXVkZXJfc2VydmVyXzIwMjQwMjI1LjA1X3AwGgJrbxACGgJrbw; YSC=a; GPS=1'
-          },
-          body: JSON.stringify(payload)
-        });
-
-        if (!res.ok) return [];
-
-        const data = await res.json();
-        const parsedVideos: any[] = [];
-        const seenIds = new Set<string>();
-
-        const traverse = (node: any) => {
-          if (!node || typeof node !== 'object') return;
-
-          // 1. videoRenderer parser
-          if (node.videoRenderer) {
-            const vr = node.videoRenderer;
-            if (vr.videoId && !seenIds.has(vr.videoId)) {
-              seenIds.add(vr.videoId);
-              const title = vr.title?.runs?.map((r: any) => r.text).join('') || vr.title?.simpleText || '';
-              const channelTitle = vr.ownerText?.runs?.map((r: any) => r.text).join('') || vr.shortBylineText?.runs?.map((r: any) => r.text).join('') || '';
-              const channelId = vr.ownerText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || vr.shortBylineText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || '';
-              const channelThumbnail = vr.channelThumbnailSupportedRenderers?.channelThumbnailWithLinkRenderer?.thumbnail?.thumbnails?.[0]?.url || '';
-              const timeAgo = vr.publishedTimeText?.simpleText || '';
-              const viewCountText = vr.viewCountText?.simpleText || vr.viewCountText?.runs?.map((r: any) => r.text).join('') || '';
-              const lengthText = vr.lengthText?.simpleText || '';
-              const desc = vr.detailedMetadataSnippets?.[0]?.snippetText?.runs?.map((r: any) => r.text).join('') || vr.descriptionSnippet?.runs?.map((r: any) => r.text).join('') || '';
-              
-              let thumbnail = vr.thumbnail?.thumbnails?.slice(-1)[0]?.url || `https://i.ytimg.com/vi/${vr.videoId}/hqdefault.jpg`;
-              if (thumbnail.startsWith('//')) thumbnail = 'https:' + thumbnail;
-
-              if (title.trim()) {
-                const approxPubDate = parseRelativeTimeTextToIso(timeAgo, nowEpoch);
-                parsedVideos.push({
-                  videoId: vr.videoId,
-                  channelId: channelId || `ch-${vr.videoId}`,
-                  channelTitle: channelTitle.trim() || 'YouTube Creator',
-                  channelThumbnail: channelThumbnail.startsWith('//') ? 'https:' + channelThumbnail : channelThumbnail,
-                  title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
-                  description: desc.trim(),
-                  timeAgo: timeAgo.trim(),
-                  viewCountText: viewCountText.trim(),
-                  duration: lengthText.trim(),
-                  thumbnailUrl: thumbnail,
-                  videoUrl: `https://www.youtube.com/watch?v=${vr.videoId}`,
-                  publishedAt: approxPubDate
-                });
-              }
-            }
-          }
-
-          // 2. compactVideoRenderer / gridVideoRenderer
-          if (node.compactVideoRenderer || node.gridVideoRenderer) {
-            const cvr = node.compactVideoRenderer || node.gridVideoRenderer;
-            if (cvr.videoId && !seenIds.has(cvr.videoId)) {
-              seenIds.add(cvr.videoId);
-              const title = cvr.title?.runs?.map((r: any) => r.text).join('') || cvr.title?.simpleText || '';
-              const channelTitle = cvr.shortBylineText?.runs?.map((r: any) => r.text).join('') || cvr.ownerText?.runs?.map((r: any) => r.text).join('') || '';
-              const channelId = cvr.shortBylineText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || cvr.ownerText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || '';
-              const timeAgo = cvr.publishedTimeText?.simpleText || '';
-              const viewCountText = cvr.viewCountText?.simpleText || '';
-              const lengthText = cvr.lengthText?.simpleText || '';
-              let thumbnail = cvr.thumbnail?.thumbnails?.slice(-1)[0]?.url || `https://i.ytimg.com/vi/${cvr.videoId}/hqdefault.jpg`;
-              if (thumbnail.startsWith('//')) thumbnail = 'https:' + thumbnail;
-
-              if (title.trim()) {
-                const approxPubDate = parseRelativeTimeTextToIso(timeAgo, nowEpoch);
-                parsedVideos.push({
-                  videoId: cvr.videoId,
-                  channelId: channelId || `ch-${cvr.videoId}`,
-                  channelTitle: channelTitle.trim() || 'YouTube Creator',
-                  channelThumbnail: '',
-                  title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
-                  description: '',
-                  timeAgo: timeAgo.trim(),
-                  viewCountText: viewCountText.trim(),
-                  duration: lengthText.trim(),
-                  thumbnailUrl: thumbnail,
-                  videoUrl: `https://www.youtube.com/watch?v=${cvr.videoId}`,
-                  publishedAt: approxPubDate
-                });
-              }
-            }
-          }
-
-          // 3. lockupViewModel parser (modern YouTube search structure)
-          if (node.lockupViewModel) {
-            const lvm = node.lockupViewModel;
-            const contentId = lvm.contentId;
-            if (contentId && !seenIds.has(contentId)) {
-              seenIds.add(contentId);
-              const title = lvm.metadata?.lockupMetadataViewModel?.title?.content || 
-                            lvm.rendererContext?.accessibilityContext?.label || '';
-              const metadataItems = lvm.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel?.metadataRows || [];
-              
-              let viewCountNumStr = '';
-              let timeAgoStr = '';
-              let chTitle = '';
-
-              for (const row of metadataItems) {
-                for (const part of (row.metadataParts || [])) {
-                  const txt = part.text?.content || '';
-                  if (txt.includes('조회수') || txt.includes('views')) {
-                    viewCountNumStr = txt;
-                  } else if (txt.includes('전') || txt.includes('ago') || txt.includes('스트리밍') || txt.includes('실시간')) {
-                    timeAgoStr = txt;
-                  } else if (!chTitle && txt.length > 0 && !txt.includes('조회수') && !txt.includes('분') && !txt.includes('초')) {
-                    chTitle = txt;
-                  }
-                }
-              }
-
-              if (title.trim()) {
-                const approxPubDate = parseRelativeTimeTextToIso(timeAgoStr, nowEpoch);
-                parsedVideos.push({
-                  videoId: contentId,
-                  channelId: `ch-${contentId}`,
-                  channelTitle: chTitle || 'YouTube Creator',
-                  channelThumbnail: '',
-                  title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
-                  description: '',
-                  timeAgo: timeAgoStr.trim(),
-                  viewCountText: viewCountNumStr.trim(),
-                  duration: '',
-                  thumbnailUrl: `https://i.ytimg.com/vi/${contentId}/hqdefault.jpg`,
-                  videoUrl: `https://www.youtube.com/watch?v=${contentId}`,
-                  publishedAt: approxPubDate
-                });
-              }
-            }
-          }
-
-          for (const k of Object.keys(node)) {
-            traverse(node[k]);
-          }
-        };
-
-        traverse(data);
-        return parsedVideos;
-      } catch (err) {
-        console.warn('Innertube search error:', err);
-        return [];
-      }
-    };
 
     // Helper to fetch and parse YouTube search results via Web Scraping (Tier 2 Fallback)
     const fetchYouTubeSearchResults = async (searchSp: string) => {
@@ -2051,64 +2052,85 @@ app.post('/api/youtube/quick-analyze', async (req, res) => {
 
       return res.json({ success: true, video: videoObj });
     } else {
-      // 2. Keyword/Topic Search & Instant Analysis
-      const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(trimmed)}&sp=CAI%3D`;
-      const searchRes = await fetch(searchUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
-        }
-      });
-
-      if (!searchRes.ok) {
-        throw new Error('유튜브 검색 결과를 가져올 수 없습니다.');
-      }
-
-      const searchHtml = await searchRes.text();
-      const match = searchHtml.match(/var ytInitialData = ({.*?});<\/script>/s) || searchHtml.match(/ytInitialData\s*=\s*({.+?});/s);
-      if (!match) {
-        throw new Error('검색 데이터 파싱에 실패했습니다.');
-      }
-
-      const searchData = JSON.parse(match[1]);
+      // 2. Keyword/Topic Search & Instant Analysis using Innertube Primary Engine
       let foundVideo: any = null;
 
-      const traverse = (node: any) => {
-        if (foundVideo || !node || typeof node !== 'object') return;
-        if (node.videoRenderer) {
-          const vr = node.videoRenderer;
-          if (vr.videoId && vr.title) {
-            const title = vr.title?.runs?.map((r: any) => r.text).join('') || vr.title?.simpleText || '';
-            const owner = vr.ownerText?.runs?.map((r: any) => r.text).join('') || vr.shortBylineText?.runs?.map((r: any) => r.text).join('') || '';
-            const timeAgo = vr.publishedTimeText?.simpleText || '';
-            const desc = vr.detailedMetadataSnippets?.[0]?.snippetText?.runs?.map((r: any) => r.text).join('') || '';
-            foundVideo = {
-              videoId: vr.videoId,
-              title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
-              channelTitle: owner || 'YouTube Creator',
-              timeAgo,
-              desc
-            };
-          }
+      try {
+        const liveVideos = await fetchYouTubeInnertubeSearch(trimmed, 'CAISAhAB'); // Newest first
+        if (liveVideos && liveVideos.length > 0) {
+          foundVideo = liveVideos[0];
         }
-        for (const k of Object.keys(node)) traverse(node[k]);
-      };
-
-      traverse(searchData);
+      } catch (err) {
+        console.warn('Innertube search in quick-analyze failed, falling back:', err);
+      }
 
       if (!foundVideo) {
-        throw new Error(`"${trimmed}" 관련 영상을 찾지 못했습니다.`);
+        try {
+          const liveVideos = await fetchYouTubeInnertubeSearch(trimmed, 'EgIQAQ%3D%3D'); // General videos
+          if (liveVideos && liveVideos.length > 0) {
+            foundVideo = liveVideos[0];
+          }
+        } catch (err) {}
+      }
+
+      if (!foundVideo) {
+        // Tier 2 Fallback: Web scraping
+        try {
+          const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(trimmed)}&sp=EgIQAQ%253D%253D`;
+          const searchRes = await fetch(searchUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+              'Cookie': 'SOCS=CAISNQgDEitib3FfaWRlbnRpdHlmc2J1aWxkdG9vbHNsYXVkZXJfc2VydmVyXzIwMjQwMjI1LjA1X3AwGgJrbxACGgJrbw; YSC=a; GPS=1'
+            }
+          });
+
+          if (searchRes.ok) {
+            const searchHtml = await searchRes.text();
+            const match = searchHtml.match(/var ytInitialData = ({.*?});<\/script>/s) || searchHtml.match(/ytInitialData\s*=\s*({.+?});/s);
+            if (match) {
+              const searchData = JSON.parse(match[1]);
+              const traverse = (node: any) => {
+                if (foundVideo || !node || typeof node !== 'object') return;
+                if (node.videoRenderer) {
+                  const vr = node.videoRenderer;
+                  if (vr.videoId && vr.title) {
+                    const title = vr.title?.runs?.map((r: any) => r.text).join('') || vr.title?.simpleText || '';
+                    const owner = vr.ownerText?.runs?.map((r: any) => r.text).join('') || vr.shortBylineText?.runs?.map((r: any) => r.text).join('') || '';
+                    const timeAgo = vr.publishedTimeText?.simpleText || '';
+                    const desc = vr.detailedMetadataSnippets?.[0]?.snippetText?.runs?.map((r: any) => r.text).join('') || '';
+                    foundVideo = {
+                      videoId: vr.videoId,
+                      title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+                      channelTitle: owner || 'YouTube Creator',
+                      timeAgo,
+                      description: desc
+                    };
+                  }
+                }
+                for (const k of Object.keys(node)) traverse(node[k]);
+              };
+              traverse(searchData);
+            }
+          }
+        } catch (scrapeErr) {
+          console.warn('Scrape fallback error:', scrapeErr);
+        }
+      }
+
+      if (!foundVideo) {
+        throw new Error(`"${trimmed}" 관련 최신 영상을 찾지 못했습니다. 다른 키워드로 검색해보세요.`);
       }
 
       // Fetch deep transcript & details
       const details = await fetchYouTubeVideoDetailsAndTranscript(foundVideo.videoId);
-      const pubDateIso = parseRelativeTimeTextToIso(foundVideo.timeAgo, nowEpoch);
+      const pubDateIso = parseRelativeTimeTextToIso(foundVideo.timeAgo || '1일 전', nowEpoch);
       const timeStatus = calculateVideoTimeStatus(pubDateIso, nowEpoch);
 
       // Summarize with Gemini
       const { summary, aiPowered, fullDescription: resolvedDesc, transcript: resolvedTrans } = await summarizeVideoWithGemini(
         foundVideo.title,
-        details.fullDescription || foundVideo.desc,
+        details.fullDescription || foundVideo.description || foundVideo.desc || '',
         foundVideo.channelTitle,
         category,
         detailLevel,
@@ -2120,21 +2142,21 @@ app.post('/api/youtube/quick-analyze', async (req, res) => {
       const videoObj = {
         id: `yt-${foundVideo.videoId}`,
         videoId: foundVideo.videoId,
-        channelId: `ch-${foundVideo.videoId}`,
+        channelId: foundVideo.channelId || `ch-${foundVideo.videoId}`,
         channelTitle: foundVideo.channelTitle,
-        channelThumbnail: `https://i.ytimg.com/vi/${foundVideo.videoId}/hqdefault.jpg`,
+        channelThumbnail: foundVideo.thumbnailUrl || `https://i.ytimg.com/vi/${foundVideo.videoId}/hqdefault.jpg`,
         title: foundVideo.title,
-        description: details.fullDescription || foundVideo.desc || `${foundVideo.channelTitle} 영상`,
+        description: details.fullDescription || foundVideo.description || `${foundVideo.channelTitle} 영상`,
         fullDescription: resolvedDesc,
         transcript: resolvedTrans,
-        thumbnailUrl: `https://i.ytimg.com/vi/${foundVideo.videoId}/hqdefault.jpg`,
+        thumbnailUrl: foundVideo.thumbnailUrl || `https://i.ytimg.com/vi/${foundVideo.videoId}/hqdefault.jpg`,
         publishedAt: pubDateIso,
         videoUrl: `https://www.youtube.com/watch?v=${foundVideo.videoId}`,
         category: summary.category || category,
         isYesterday: timeStatus.isYesterday,
         isWithin24h: timeStatus.isWithin24h,
         isToday: timeStatus.isToday,
-        relativeTimeText: foundVideo.timeAgo || timeStatus.relativeTimeText,
+        relativeTimeText: timeStatus.relativeTimeText || foundVideo.timeAgo || '최신 영상',
         isSummarized: true,
         summary,
         createdAt: pubDateIso
