@@ -59,7 +59,8 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
   isQuickAnalyzing = false
 }) => {
   const { showToast } = useToast();
-  const [query, setQuery] = useState(initialQuery);
+  const safeInitialQuery = typeof initialQuery === 'string' ? initialQuery : '';
+  const [query, setQuery] = useState(safeInitialQuery);
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [sortBy, setSortBy] = useState<'relevance' | 'date' | 'viewCount'>('relevance');
   const [isLoading, setIsLoading] = useState(false);
@@ -68,16 +69,20 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const existingVideoIds = new Set(existingVideos.map(v => v.videoId));
+  const safeExistingVideos = Array.isArray(existingVideos) ? existingVideos : [];
+  const existingVideoIds = new Set(
+    safeExistingVideos.map(v => v?.videoId).filter(Boolean) as string[]
+  );
 
   // Sync initial query when modal opens
   useEffect(() => {
     if (isOpen) {
-      if (initialQuery && initialQuery !== query) {
-        setQuery(initialQuery);
-        performSearch(initialQuery, dateFilter, sortBy);
-      } else if (!hasSearched && query.trim()) {
-        performSearch(query, dateFilter, sortBy);
+      const qStr = typeof initialQuery === 'string' ? initialQuery.trim() : '';
+      if (qStr && qStr !== query) {
+        setQuery(qStr);
+        performSearch(qStr, dateFilter, sortBy);
+      } else if (!hasSearched && query && typeof query === 'string' && query.trim()) {
+        performSearch(query.trim(), dateFilter, sortBy);
       }
     }
   }, [isOpen, initialQuery]);
@@ -87,7 +92,7 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
     filter = dateFilter,
     sort = sortBy
   ) => {
-    const q = searchQuery.trim();
+    const q = typeof searchQuery === 'string' ? searchQuery.trim() : '';
     if (!q) {
       showToast('검색어를 입력해주세요.', 'info');
       return;
@@ -101,8 +106,8 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
         sortBy: sort,
         limit: 30
       });
-      setResults(data);
-      if (data.length === 0) {
+      setResults(Array.isArray(data) ? data : []);
+      if (!data || data.length === 0) {
         showToast(`'${q}' 관련 동영상을 찾을 수 없습니다. 검색어를 변경해보세요.`, 'info');
       }
     } catch (e: any) {
@@ -115,7 +120,9 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    performSearch(query, dateFilter, sortBy);
+    if (typeof query === 'string') {
+      performSearch(query, dateFilter, sortBy);
+    }
   };
 
   const handleKeywordClick = (kw: string) => {
@@ -125,33 +132,35 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
 
   const handleFilterChange = (newDateFilter: 'all' | 'today' | 'week' | 'month') => {
     setDateFilter(newDateFilter);
-    if (query.trim()) {
-      performSearch(query, newDateFilter, sortBy);
+    if (typeof query === 'string' && query.trim()) {
+      performSearch(query.trim(), newDateFilter, sortBy);
     }
   };
 
   const handleSortChange = (newSort: 'relevance' | 'date' | 'viewCount') => {
     setSortBy(newSort);
-    if (query.trim()) {
-      performSearch(query, dateFilter, newSort);
+    if (typeof query === 'string' && query.trim()) {
+      performSearch(query.trim(), dateFilter, newSort);
     }
   };
 
   const convertSearchResultToVideo = (res: YouTubeVideoSearchResult): YouTubeVideo => {
+    const vidId = res.videoId || `vid-${Date.now().toString(36)}`;
+    const chTitle = res.channelTitle || 'YouTube Creator';
     return {
-      id: `vid-${res.videoId}-${Date.now().toString(36)}`,
-      videoId: res.videoId,
-      channelId: res.channelId || `ch-${res.channelTitle}`,
-      channelTitle: res.channelTitle,
-      channelThumbnail: res.channelThumbnail,
-      title: res.title,
-      description: res.description,
+      id: `vid-${vidId}-${Date.now().toString(36)}`,
+      videoId: vidId,
+      channelId: res.channelId || `ch-${chTitle}`,
+      channelTitle: chTitle,
+      channelThumbnail: res.channelThumbnail || '',
+      title: res.title || '유튜브 동영상',
+      description: res.description || '',
       publishedAt: res.publishedAt || new Date().toISOString(),
-      thumbnailUrl: res.thumbnailUrl,
-      videoUrl: res.videoUrl || `https://www.youtube.com/watch?v=${res.videoId}`,
+      thumbnailUrl: res.thumbnailUrl || `https://i.ytimg.com/vi/${vidId}/hqdefault.jpg`,
+      videoUrl: res.videoUrl || `https://www.youtube.com/watch?v=${vidId}`,
       duration: res.duration,
       viewCountText: res.viewCountText,
-      category: categories[0] || 'IT/테크',
+      category: (categories && categories[0]) || 'IT/테크',
       isWithin24h: false,
       isToday: false,
       isYesterday: false,
@@ -449,25 +458,26 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
                             {video.channelThumbnail ? (
                               <img
                                 src={video.channelThumbnail}
-                                alt={video.channelTitle}
+                                alt={video.channelTitle || '채널'}
                                 className="w-5 h-5 rounded-full object-cover border border-slate-200 shrink-0"
                               />
                             ) : (
                               <div className="w-5 h-5 rounded-full bg-slate-800 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
-                                {video.channelTitle.charAt(0)}
+                                {(video.channelTitle || 'Y').charAt(0)}
                               </div>
                             )}
                             <span className="text-xs font-semibold text-slate-700 truncate">
-                              {video.channelTitle}
+                              {video.channelTitle || 'YouTube Creator'}
                             </span>
                           </div>
 
                           {/* 1-click Channel Subscription */}
                           {onAddChannel && (
                             (() => {
-                              const isChannelRegistered = channels.some(c => 
-                                (video.channelId && c.channelId === video.channelId) || 
-                                c.title.toLowerCase() === video.channelTitle.toLowerCase()
+                              const chTitle = video.channelTitle || '';
+                              const isChannelRegistered = (channels || []).some(c => 
+                                (c && video.channelId && c.channelId && c.channelId === video.channelId) || 
+                                (c && c.title && chTitle && c.title.toLowerCase() === chTitle.toLowerCase())
                               );
                               if (isChannelRegistered) {
                                 return (
@@ -481,12 +491,13 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    const safeChTitle = video.channelTitle || 'YouTube Channel';
                                     onAddChannel({
-                                      channelId: video.channelId || `ch-${video.channelTitle}`,
-                                      title: video.channelTitle,
-                                      handle: `@${video.channelTitle.replace(/\s+/g, '')}`,
+                                      channelId: video.channelId || `ch-${safeChTitle}`,
+                                      title: safeChTitle,
+                                      handle: `@${safeChTitle.replace(/\s+/g, '').toLowerCase()}`,
                                       thumbnailUrl: video.channelThumbnail || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
-                                      category: categories[0] || 'IT/테크',
+                                      category: (categories && categories[0]) || 'IT/테크',
                                       isActive: true,
                                       subscriberCount: '10만+'
                                     });
@@ -504,10 +515,10 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
 
                         {/* Title */}
                         <h4 
-                          title={video.title}
+                          title={video.title || ''}
                           className="text-xs sm:text-sm font-bold text-slate-900 line-clamp-2 hover:text-amber-700 transition-colors leading-snug mb-1.5"
                         >
-                          {video.title}
+                          {video.title || '제목 없음'}
                         </h4>
 
                         {/* Description snippet */}

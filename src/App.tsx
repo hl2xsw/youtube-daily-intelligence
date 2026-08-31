@@ -597,8 +597,9 @@ function AppContent() {
   };
 
   // 4.6 Open YouTube Live Video Search Modal
-  const handleOpenVideoSearch = (initialQuery?: string) => {
-    setVideoSearchInitialQuery(initialQuery || '');
+  const handleOpenVideoSearch = (initialQuery?: any) => {
+    const safeQuery = typeof initialQuery === 'string' ? initialQuery.trim() : '';
+    setVideoSearchInitialQuery(safeQuery);
     setIsVideoSearchModalOpen(true);
   };
 

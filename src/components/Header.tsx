@@ -18,7 +18,7 @@ interface HeaderProps {
   onRefreshAndSummarize24h: () => void;
   isProcessing: boolean;
   onOpenExportModal: () => void;
-  onOpenVideoSearch?: () => void;
+  onOpenVideoSearch?: (query?: string) => void;
   total24hCount: number;
 }
 
@@ -109,7 +109,7 @@ export const Header: React.FC<HeaderProps> = ({
             {onOpenVideoSearch && (
               <button
                 id="header-video-search-btn"
-                onClick={onOpenVideoSearch}
+                onClick={() => onOpenVideoSearch('')}
                 title="유튜브 전체 실시간 동영상 검색 & AI 분석"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-800 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 border border-slate-200 rounded-lg shadow-2xs transition-colors"
               >
