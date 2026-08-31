@@ -505,74 +505,104 @@ app.post('/api/youtube/search-channels', async (req, res) => {
       }
     }
 
-    // 3. YouTube search with channel filter (sp=EgIQAg%253D%253D)
+    // 3. YouTube search with channel filter via Innertube (Primary) and Scraping (Fallback)
     try {
-      const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(clean)}&sp=EgIQAg%253D%253D`;
-      const searchRes = await fetch(searchUrl, {
+      // Tier 1: Innertube Channel Search
+      const innertubeRes = await fetch('https://www.youtube.com/youtubei/v1/search', {
+        method: 'POST',
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
-        }
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+          'Cookie': 'SOCS=CAISNQgDEitib3FfaWRlbnRpdHlmc2J1aWxkdG9vbHNsYXVkZXJfc2VydmVyXzIwMjQwMjI1LjA1X3AwGgJrbxACGgJrbw; YSC=a; GPS=1'
+        },
+        body: JSON.stringify({
+          context: { client: { clientName: 'WEB', clientVersion: '2.20240501.01.00', hl: 'ko', gl: 'KR' } },
+          query: clean,
+          params: 'EgIQAg%3D%3D' // Channel filter
+        })
       });
 
-      if (searchRes.ok) {
-        const html = await searchRes.text();
-        const match = html.match(/var ytInitialData = ({.*?});<\/script>/s) || html.match(/ytInitialData\s*=\s*({.+?});/s);
-        if (match) {
-          const data = JSON.parse(match[1]);
-          const traverse = (node: any) => {
-            if (!node || typeof node !== 'object') return;
-            if (node.channelRenderer) {
-              const cr = node.channelRenderer;
-              const channelId = cr.channelId;
-              if (channelId && !seenIds.has(channelId)) {
-                seenIds.add(channelId);
-                const title = cr.title?.simpleText || cr.title?.runs?.map((r: any) => r.text).join('') || '';
-                let handle = cr.navigationEndpoint?.browseEndpoint?.canonicalBaseUrl || '';
-                if (handle.startsWith('/')) handle = handle.substring(1);
-                try { handle = decodeURIComponent(handle); } catch {}
-                if (!handle.startsWith('@') && handle) handle = `@${handle}`;
-                if (!handle && cr.subscriberCountText?.simpleText?.startsWith('@')) {
-                  handle = cr.subscriberCountText.simpleText;
-                }
+      let channelData: any = null;
+      if (innertubeRes.ok) {
+        try {
+          channelData = await innertubeRes.json();
+        } catch {}
+      }
 
-                let subscriberCount = cr.videoCountText?.simpleText || cr.subscriberCountText?.simpleText || '구독자 정보 없음';
-                let description = cr.descriptionSnippet?.runs?.map((r: any) => r.text).join('') || '';
-                let thumb = cr.thumbnail?.thumbnails?.[cr.thumbnail.thumbnails.length - 1]?.url || '';
-                if (thumb.startsWith('//')) thumb = 'https:' + thumb;
-
-                // Smart Category Inference
-                let category = '기타';
-                const lowerText = `${title} ${description}`.toLowerCase();
-                if (lowerText.includes('뉴스') || lowerText.includes('news') || lowerText.includes('시사') || lowerText.includes('보도') || lowerText.includes('mbc') || lowerText.includes('sbs') || lowerText.includes('kbs') || lowerText.includes('ytn') || lowerText.includes('jtbc')) {
-                  category = '뉴스/시사';
-                } else if (lowerText.includes('경제') || lowerText.includes('주식') || lowerText.includes('투자') || lowerText.includes('금융') || lowerText.includes('재테크') || lowerText.includes('부동산') || lowerText.includes('슈카') || lowerText.includes('삼프로') || lowerText.includes('김광석')) {
-                  category = '경제/재테크';
-                } else if (lowerText.includes('ai') || lowerText.includes('개발') || lowerText.includes('테크') || lowerText.includes('코딩') || lowerText.includes('it') || lowerText.includes('기술') || lowerText.includes('컴퓨터') || lowerText.includes('소프트웨어') || lowerText.includes('앱')) {
-                  category = 'IT/테크';
-                } else if (lowerText.includes('스타트업') || lowerText.includes('비즈니스') || lowerText.includes('창업') || lowerText.includes('기업') || lowerText.includes('경영') || lowerText.includes('티타임즈') || lowerText.includes('ttimes') || lowerText.includes('이오') || lowerText.includes('ceo')) {
-                  category = '비즈니스/스타트업';
-                } else if (lowerText.includes('과학') || lowerText.includes('우주') || lowerText.includes('지식') || lowerText.includes('물리') || lowerText.includes('공학') || lowerText.includes('1분만') || lowerText.includes('안될과학')) {
-                  category = '과학/지식';
-                } else if (lowerText.includes('영어') || lowerText.includes('공부') || lowerText.includes('자기계발') || lowerText.includes('독서') || lowerText.includes('학습') || lowerText.includes('동기부여')) {
-                  category = '자기계발/교육';
-                }
-
-                results.push({
-                  channelId,
-                  title: title || clean,
-                  handle: handle || `@${title.replace(/\s+/g, '').toLowerCase()}`,
-                  subscriberCount,
-                  description: description || `${title} 채널`,
-                  thumbnailUrl: thumb || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
-                  category
-                });
-              }
-            }
-            for (const k of Object.keys(node)) traverse(node[k]);
-          };
-          traverse(data);
+      if (!channelData) {
+        // Tier 2: Scraping Fallback
+        const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(clean)}&sp=EgIQAg%253D%253D`;
+        const searchRes = await fetch(searchUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
+          }
+        });
+        if (searchRes.ok) {
+          const html = await searchRes.text();
+          const match = html.match(/var ytInitialData = ({.*?});<\/script>/s) || html.match(/ytInitialData\s*=\s*({.+?});/s);
+          if (match) {
+            channelData = JSON.parse(match[1]);
+          }
         }
+      }
+
+      if (channelData) {
+        const traverse = (node: any) => {
+          if (!node || typeof node !== 'object') return;
+          if (node.channelRenderer) {
+            const cr = node.channelRenderer;
+            const channelId = cr.channelId;
+            if (channelId && !seenIds.has(channelId)) {
+              seenIds.add(channelId);
+              const title = cr.title?.simpleText || cr.title?.runs?.map((r: any) => r.text).join('') || '';
+              let handle = cr.navigationEndpoint?.browseEndpoint?.canonicalBaseUrl || '';
+              if (handle.startsWith('/')) handle = handle.substring(1);
+              try { handle = decodeURIComponent(handle); } catch {}
+              if (!handle.startsWith('@') && handle) handle = `@${handle}`;
+              if (!handle && cr.subscriberCountText?.simpleText?.startsWith('@')) {
+                handle = cr.subscriberCountText.simpleText;
+              }
+
+              let subscriberCount = cr.videoCountText?.simpleText || cr.subscriberCountText?.simpleText || '구독자 정보 없음';
+              let description = cr.descriptionSnippet?.runs?.map((r: any) => r.text).join('') || '';
+              let thumb = cr.thumbnail?.thumbnails?.[cr.thumbnail.thumbnails.length - 1]?.url || '';
+              if (thumb.startsWith('//')) thumb = 'https:' + thumb;
+
+              // Smart Category Inference
+              let category = '기타';
+              const lowerText = `${title} ${description}`.toLowerCase();
+              if (lowerText.includes('뉴스') || lowerText.includes('news') || lowerText.includes('시사') || lowerText.includes('보도') || lowerText.includes('mbc') || lowerText.includes('sbs') || lowerText.includes('kbs') || lowerText.includes('ytn') || lowerText.includes('jtbc')) {
+                category = '뉴스/시사';
+              } else if (lowerText.includes('경제') || lowerText.includes('주식') || lowerText.includes('투자') || lowerText.includes('금융') || lowerText.includes('재테크') || lowerText.includes('부동산') || lowerText.includes('슈카') || lowerText.includes('삼프로') || lowerText.includes('김광석')) {
+                category = '경제/재테크';
+              } else if (lowerText.includes('ai') || lowerText.includes('개발') || lowerText.includes('테크') || lowerText.includes('코딩') || lowerText.includes('it') || lowerText.includes('기술') || lowerText.includes('컴퓨터') || lowerText.includes('소프트웨어') || lowerText.includes('앱')) {
+                category = 'IT/테크';
+              } else if (lowerText.includes('스타트업') || lowerText.includes('비즈니스') || lowerText.includes('창업') || lowerText.includes('기업') || lowerText.includes('경영') || lowerText.includes('티타임즈') || lowerText.includes('ttimes') || lowerText.includes('이오') || lowerText.includes('ceo')) {
+                category = '비즈니스/스타트업';
+              } else if (lowerText.includes('과학') || lowerText.includes('우주') || lowerText.includes('지식') || lowerText.includes('물리') || lowerText.includes('공학') || lowerText.includes('1분만') || lowerText.includes('안될과학')) {
+                category = '과학/지식';
+              } else if (lowerText.includes('영어') || lowerText.includes('공부') || lowerText.includes('자기계발') || lowerText.includes('독서') || lowerText.includes('학습') || lowerText.includes('동기부여')) {
+                category = '자기계발/교육';
+              }
+
+              results.push({
+                channelId,
+                title: title || clean,
+                handle: handle || `@${title.replace(/\s+/g, '').toLowerCase()}`,
+                subscriberCount,
+                description: description || `${title} 채널`,
+                thumbnailUrl: thumb || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
+                category
+              });
+            }
+          }
+          for (const k of Object.keys(node)) {
+            traverse(node[k]);
+          }
+        };
+        traverse(channelData);
       }
     } catch (searchErr) {
       console.warn('YouTube channel search error:', searchErr);
@@ -639,7 +669,176 @@ app.post('/api/youtube/search-videos', async (req, res) => {
       }
     }
 
-    // Helper to fetch and parse YouTube search results
+    // Helper to query YouTube Innertube API (Tier 1 Primary Engine)
+    const fetchYouTubeInnertubeSearch = async (queryStr: string, searchParams?: string) => {
+      try {
+        const payload: any = {
+          context: {
+            client: {
+              clientName: 'WEB',
+              clientVersion: '2.20240501.01.00',
+              hl: 'ko',
+              gl: 'KR'
+            }
+          },
+          query: queryStr
+        };
+        if (searchParams) {
+          payload.params = searchParams;
+        }
+
+        const res = await fetch('https://www.youtube.com/youtubei/v1/search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Cookie': 'SOCS=CAISNQgDEitib3FfaWRlbnRpdHlmc2J1aWxkdG9vbHNsYXVkZXJfc2VydmVyXzIwMjQwMjI1LjA1X3AwGgJrbxACGgJrbw; YSC=a; GPS=1'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) return [];
+
+        const data = await res.json();
+        const parsedVideos: any[] = [];
+        const seenIds = new Set<string>();
+
+        const traverse = (node: any) => {
+          if (!node || typeof node !== 'object') return;
+
+          // 1. videoRenderer parser
+          if (node.videoRenderer) {
+            const vr = node.videoRenderer;
+            if (vr.videoId && !seenIds.has(vr.videoId)) {
+              seenIds.add(vr.videoId);
+              const title = vr.title?.runs?.map((r: any) => r.text).join('') || vr.title?.simpleText || '';
+              const channelTitle = vr.ownerText?.runs?.map((r: any) => r.text).join('') || vr.shortBylineText?.runs?.map((r: any) => r.text).join('') || '';
+              const channelId = vr.ownerText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || vr.shortBylineText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || '';
+              const channelThumbnail = vr.channelThumbnailSupportedRenderers?.channelThumbnailWithLinkRenderer?.thumbnail?.thumbnails?.[0]?.url || '';
+              const timeAgo = vr.publishedTimeText?.simpleText || '';
+              const viewCountText = vr.viewCountText?.simpleText || vr.viewCountText?.runs?.map((r: any) => r.text).join('') || '';
+              const lengthText = vr.lengthText?.simpleText || '';
+              const desc = vr.detailedMetadataSnippets?.[0]?.snippetText?.runs?.map((r: any) => r.text).join('') || vr.descriptionSnippet?.runs?.map((r: any) => r.text).join('') || '';
+              
+              let thumbnail = vr.thumbnail?.thumbnails?.slice(-1)[0]?.url || `https://i.ytimg.com/vi/${vr.videoId}/hqdefault.jpg`;
+              if (thumbnail.startsWith('//')) thumbnail = 'https:' + thumbnail;
+
+              if (title.trim()) {
+                const approxPubDate = parseRelativeTimeTextToIso(timeAgo, nowEpoch);
+                parsedVideos.push({
+                  videoId: vr.videoId,
+                  channelId: channelId || `ch-${vr.videoId}`,
+                  channelTitle: channelTitle.trim() || 'YouTube Creator',
+                  channelThumbnail: channelThumbnail.startsWith('//') ? 'https:' + channelThumbnail : channelThumbnail,
+                  title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+                  description: desc.trim(),
+                  timeAgo: timeAgo.trim(),
+                  viewCountText: viewCountText.trim(),
+                  duration: lengthText.trim(),
+                  thumbnailUrl: thumbnail,
+                  videoUrl: `https://www.youtube.com/watch?v=${vr.videoId}`,
+                  publishedAt: approxPubDate
+                });
+              }
+            }
+          }
+
+          // 2. compactVideoRenderer / gridVideoRenderer
+          if (node.compactVideoRenderer || node.gridVideoRenderer) {
+            const cvr = node.compactVideoRenderer || node.gridVideoRenderer;
+            if (cvr.videoId && !seenIds.has(cvr.videoId)) {
+              seenIds.add(cvr.videoId);
+              const title = cvr.title?.runs?.map((r: any) => r.text).join('') || cvr.title?.simpleText || '';
+              const channelTitle = cvr.shortBylineText?.runs?.map((r: any) => r.text).join('') || cvr.ownerText?.runs?.map((r: any) => r.text).join('') || '';
+              const channelId = cvr.shortBylineText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || cvr.ownerText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || '';
+              const timeAgo = cvr.publishedTimeText?.simpleText || '';
+              const viewCountText = cvr.viewCountText?.simpleText || '';
+              const lengthText = cvr.lengthText?.simpleText || '';
+              let thumbnail = cvr.thumbnail?.thumbnails?.slice(-1)[0]?.url || `https://i.ytimg.com/vi/${cvr.videoId}/hqdefault.jpg`;
+              if (thumbnail.startsWith('//')) thumbnail = 'https:' + thumbnail;
+
+              if (title.trim()) {
+                const approxPubDate = parseRelativeTimeTextToIso(timeAgo, nowEpoch);
+                parsedVideos.push({
+                  videoId: cvr.videoId,
+                  channelId: channelId || `ch-${cvr.videoId}`,
+                  channelTitle: channelTitle.trim() || 'YouTube Creator',
+                  channelThumbnail: '',
+                  title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+                  description: '',
+                  timeAgo: timeAgo.trim(),
+                  viewCountText: viewCountText.trim(),
+                  duration: lengthText.trim(),
+                  thumbnailUrl: thumbnail,
+                  videoUrl: `https://www.youtube.com/watch?v=${cvr.videoId}`,
+                  publishedAt: approxPubDate
+                });
+              }
+            }
+          }
+
+          // 3. lockupViewModel parser (modern YouTube search structure)
+          if (node.lockupViewModel) {
+            const lvm = node.lockupViewModel;
+            const contentId = lvm.contentId;
+            if (contentId && !seenIds.has(contentId)) {
+              seenIds.add(contentId);
+              const title = lvm.metadata?.lockupMetadataViewModel?.title?.content || 
+                            lvm.rendererContext?.accessibilityContext?.label || '';
+              const metadataItems = lvm.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel?.metadataRows || [];
+              
+              let viewCountNumStr = '';
+              let timeAgoStr = '';
+              let chTitle = '';
+
+              for (const row of metadataItems) {
+                for (const part of (row.metadataParts || [])) {
+                  const txt = part.text?.content || '';
+                  if (txt.includes('조회수') || txt.includes('views')) {
+                    viewCountNumStr = txt;
+                  } else if (txt.includes('전') || txt.includes('ago') || txt.includes('스트리밍') || txt.includes('실시간')) {
+                    timeAgoStr = txt;
+                  } else if (!chTitle && txt.length > 0 && !txt.includes('조회수') && !txt.includes('분') && !txt.includes('초')) {
+                    chTitle = txt;
+                  }
+                }
+              }
+
+              if (title.trim()) {
+                const approxPubDate = parseRelativeTimeTextToIso(timeAgoStr, nowEpoch);
+                parsedVideos.push({
+                  videoId: contentId,
+                  channelId: `ch-${contentId}`,
+                  channelTitle: chTitle || 'YouTube Creator',
+                  channelThumbnail: '',
+                  title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+                  description: '',
+                  timeAgo: timeAgoStr.trim(),
+                  viewCountText: viewCountNumStr.trim(),
+                  duration: '',
+                  thumbnailUrl: `https://i.ytimg.com/vi/${contentId}/hqdefault.jpg`,
+                  videoUrl: `https://www.youtube.com/watch?v=${contentId}`,
+                  publishedAt: approxPubDate
+                });
+              }
+            }
+          }
+
+          for (const k of Object.keys(node)) {
+            traverse(node[k]);
+          }
+        };
+
+        traverse(data);
+        return parsedVideos;
+      } catch (err) {
+        console.warn('Innertube search error:', err);
+        return [];
+      }
+    };
+
+    // Helper to fetch and parse YouTube search results via Web Scraping (Tier 2 Fallback)
     const fetchYouTubeSearchResults = async (searchSp: string) => {
       const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(trimmed)}&sp=${searchSp}`;
       const searchRes = await fetch(searchUrl, {
@@ -772,7 +971,7 @@ app.post('/api/youtube/search-videos', async (req, res) => {
       return parsedVideos;
     };
 
-    // 2. Determine YouTube SP search filter parameter
+    // 2. Determine YouTube SP / Innertube search filter parameter
     let sp = 'EgIQAQ%3D%3D'; // Default Type: Video
     if (sortBy === 'date') {
       sp = 'CAISAhAB'; // Video + Sort by upload date
@@ -786,11 +985,25 @@ app.post('/api/youtube/search-videos', async (req, res) => {
       sp = 'EgQIBBAB'; // Video + This month
     }
 
-    let videos = await fetchYouTubeSearchResults(sp);
+    // Step 1: Execute primary Innertube Search
+    let videos = await fetchYouTubeInnertubeSearch(trimmed, sp);
 
-    // If specific date/sort filter yielded 0 results, fall back to default video search so the user still gets rich relevant results
+    // Step 2: Fall back to Web scraping if Innertube yielded no results
+    if (videos.length === 0) {
+      videos = await fetchYouTubeSearchResults(sp);
+    }
+
+    // Step 3: If specific date/sort filter yielded 0 results, fall back to default video search so the user still gets rich relevant results
     if (videos.length === 0 && sp !== 'EgIQAQ%3D%3D') {
-      videos = await fetchYouTubeSearchResults('EgIQAQ%3D%3D');
+      videos = await fetchYouTubeInnertubeSearch(trimmed, 'EgIQAQ%3D%3D');
+      if (videos.length === 0) {
+        videos = await fetchYouTubeSearchResults('EgIQAQ%3D%3D');
+      }
+    }
+
+    // Step 4: If still no videos, try raw query without filter
+    if (videos.length === 0) {
+      videos = await fetchYouTubeInnertubeSearch(trimmed);
     }
 
     res.json({
