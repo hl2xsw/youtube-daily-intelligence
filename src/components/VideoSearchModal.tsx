@@ -78,7 +78,7 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       const qStr = typeof initialQuery === 'string' ? initialQuery.trim() : '';
-      if (qStr && qStr !== query) {
+      if (qStr) {
         setQuery(qStr);
         performSearch(qStr, dateFilter, sortBy);
       } else if (!hasSearched && query && typeof query === 'string' && query.trim()) {
@@ -104,11 +104,11 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
       const data = await searchYouTubeVideos(q, {
         dateFilter: filter,
         sortBy: sort,
-        limit: 30
+        limit: 35
       });
       setResults(Array.isArray(data) ? data : []);
       if (!data || data.length === 0) {
-        showToast(`'${q}' 관련 동영상을 찾을 수 없습니다. 검색어를 변경해보세요.`, 'info');
+        showToast(`'${q}' 관련 동영상을 찾을 수 없습니다. 검색어나 필터를 변경해보세요.`, 'info');
       }
     } catch (e: any) {
       console.error('Search error:', e);
@@ -352,15 +352,40 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
 
             <div className="flex items-center gap-1.5">
               <span className="text-[11px] font-semibold text-slate-500 mr-1">정렬:</span>
-              <select
-                value={sortBy}
-                onChange={(e) => handleSortChange(e.target.value as any)}
-                className="px-2 py-1 text-xs rounded bg-white border border-slate-200 text-slate-800 font-medium focus:outline-none"
+              <button
+                type="button"
+                onClick={() => handleSortChange('relevance')}
+                className={`px-2 py-1 text-xs rounded font-medium transition-colors ${
+                  sortBy === 'relevance'
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                }`}
               >
-                <option value="relevance">관련도순</option>
-                <option value="date">최신 업로드순</option>
-                <option value="viewCount">조회수 높은순</option>
-              </select>
+                관련도순
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSortChange('date')}
+                className={`px-2 py-1 text-xs rounded font-medium transition-colors flex items-center gap-1 ${
+                  sortBy === 'date'
+                    ? 'bg-amber-500 text-slate-950 font-bold'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                <Flame className="w-3 h-3 text-amber-600 fill-amber-600" />
+                최신 업로드순
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSortChange('viewCount')}
+                className={`px-2 py-1 text-xs rounded font-medium transition-colors ${
+                  sortBy === 'viewCount'
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                조회수순
+              </button>
             </div>
           </div>
         </div>
