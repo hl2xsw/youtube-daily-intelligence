@@ -532,6 +532,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       )}
 
+      {/* 2.4 Live Sync Prompt Banner (When today/24h count is 0) */}
+      {todayVideos.length === 0 && within24hVideos.length === 0 && videos.length > 0 && (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+              <RefreshCw className={`w-4 h-4 ${isProcessing || isBatchAnalyzing ? 'animate-spin' : ''}`} />
+            </div>
+            <div>
+              <div className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-2">
+                <span>현재 화면에 이전 수집 영상({videos.length}개)이 표시 중입니다</span>
+                <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-[11px] font-semibold">실시간 동기화 필요</span>
+              </div>
+              <p className="text-xs text-slate-600 mt-0.5">
+                등록된 {channels.length}개 채널의 오늘(당일) 및 최근 24시간 실시간 최신 영상을 즉시 수집합니다.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onRefreshAndSummarize24h}
+            disabled={isProcessing || isBatchAnalyzing}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-xs sm:text-sm rounded-lg transition-all shadow-2xs flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isProcessing ? 'animate-spin' : ''}`} />
+            <span>{isProcessing ? '실시간 영상 수집 중...' : '⚡ 실시간 최신 영상 수집하기'}</span>
+          </button>
+        </div>
+      )}
+
       {/* 2.5 Quick Date Filter Segment */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
         <span className="text-xs font-semibold text-slate-500 shrink-0 mr-1">기간 필터:</span>

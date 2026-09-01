@@ -53,29 +53,17 @@ function AppContent() {
 
   // Sync real videos for channels in parallel - retaining up to 72 hours for today, 24h, and yesterday
   const syncChannelVideos = useCallback(async (targetChannels: YouTubeChannel[], existingVideos: YouTubeVideo[]) => {
-    const active = targetChannels.filter(c => c.isActive);
+    const active = targetChannels.filter(c => c.isActive !== false);
     if (active.length === 0) return existingVideos;
 
     const nowEpoch = Date.now();
-    let updatedList = [...existingVideos];
+    let freshVideos: YouTubeVideo[] = [];
 
     try {
-      // 1. Try unified fast batch endpoint first (<1s for all channels via RSS)
+      // 1. Try unified fast batch endpoint first (<500ms for all channels via RSS)
       const batchRes = await searchAndSummarize24hVideos(active, false);
       if (batchRes && batchRes.videos && batchRes.videos.length > 0) {
-        for (const v of batchRes.videos) {
-          const existsIdx = updatedList.findIndex(e => e.videoId === v.videoId);
-          if (existsIdx >= 0) {
-            updatedList[existsIdx] = {
-              ...v,
-              isSummarized: updatedList[existsIdx].isSummarized || v.isSummarized,
-              summary: updatedList[existsIdx].summary || v.summary,
-              isBookmarked: updatedList[existsIdx].isBookmarked
-            };
-          } else {
-            updatedList = [v, ...updatedList];
-          }
-        }
+        freshVideos = batchRes.videos;
       } else {
         // Fallback: per-channel fetch
         const results = await Promise.allSettled(
@@ -83,19 +71,7 @@ function AppContent() {
         );
         for (const res of results) {
           if (res.status === 'fulfilled' && res.value && res.value.length > 0) {
-            for (const v of res.value) {
-              const existsIdx = updatedList.findIndex(e => e.videoId === v.videoId);
-              if (existsIdx >= 0) {
-                updatedList[existsIdx] = {
-                  ...v,
-                  isSummarized: updatedList[existsIdx].isSummarized || v.isSummarized,
-                  summary: updatedList[existsIdx].summary || v.summary,
-                  isBookmarked: updatedList[existsIdx].isBookmarked
-                };
-              } else {
-                updatedList = [v, ...updatedList];
-              }
-            }
+            freshVideos.push(...res.value);
           }
         }
       }
@@ -103,8 +79,31 @@ function AppContent() {
       console.warn('Sync videos error:', e);
     }
 
+    // Merge fresh videos into existing videos map
+    const mergedMap = new Map<string, YouTubeVideo>();
+    for (const ex of existingVideos) {
+      if (ex && ex.videoId) {
+        mergedMap.set(ex.videoId, ex);
+      }
+    }
+
+    for (const f of freshVideos) {
+      if (!f || !f.videoId) continue;
+      const existing = mergedMap.get(f.videoId);
+      if (existing) {
+        mergedMap.set(f.videoId, {
+          ...f,
+          isSummarized: f.isSummarized || existing.isSummarized,
+          summary: f.summary || existing.summary,
+          isBookmarked: existing.isBookmarked
+        });
+      } else {
+        mergedMap.set(f.videoId, f);
+      }
+    }
+
     // Retain up to 30 days (720h) with fresh timeStatus
-    const cleanedList = updatedList
+    const cleanedList = Array.from(mergedMap.values())
       .filter(v => {
         if (!v || !v.videoId) return false;
         const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
@@ -142,7 +141,7 @@ function AppContent() {
     setCategories(initCategories);
 
     // ALWAYS automatically perform a live background sync on app startup
-    // This immediately brings in the latest videos (5m ago, 1h ago, etc.) from all active channels
+    // This immediately brings in the latest videos (2m ago, 1h ago, today, etc.) from all active channels
     if (initChannels.length > 0) {
       syncChannelVideos(initChannels, initVideos).then(synced => {
         if (synced && synced.length > 0) {
@@ -157,6 +156,12 @@ function AppContent() {
       if (hasChanges) {
         setChannels(updatedChannels);
         saveChannels(updatedChannels);
+        // Resync with repaired channels
+        const resynced = await syncChannelVideos(updatedChannels, initVideos);
+        if (resynced && resynced.length > 0) {
+          setVideos(resynced);
+          saveVideos(resynced);
+        }
       }
     });
   }, [syncChannelVideos]);
