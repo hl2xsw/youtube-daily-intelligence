@@ -11,6 +11,17 @@ const PORT = 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
+// Enable CORS and Preflight for all environments
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 // Lazy initialization for Gemini client
 let aiClient: GoogleGenAI | null = null;
 function getAI(): GoogleGenAI | null {
@@ -51,10 +62,100 @@ const KNOWN_CHANNELS_MAP: Array<{
     description: '경제를 빠르고 쉽게 들려드리는 경제 읽어주는 남자, 김광석입니다.',
     thumbnailUrl: 'https://yt3.googleusercontent.com/Tai2Mxx-1IWzJ6EyiRDAQfp5c3ZAV_A_jNk7ESsTmrhk2Ju7b8xecJ35HVTcaCSB98392kxxydc=s900-c-k-c0x00ffffff-no-rj',
     category: '경제/재테크',
-    subscriberCount: '50만명+'
+    subscriberCount: '51.7만명'
   },
   {
-    keywords: ['sbsnews8', 'sbs뉴스', 'sbs 뉴스', 'sbsnews', 'sbs'],
+    keywords: ['shukaworld', '슈카월드', '슈카', '슈가월드', 'syuka', 'syukaworld', '경제'],
+    channelId: 'UCsJ6RuBiTVWRX156FVbeaGg',
+    title: '슈카월드',
+    handle: '@shukaworld',
+    description: '경제, 금융, 시사 이슈를 쉽고 재미있게 풀어주는 경제/인문 채널',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_k8bBv4g9t-s7v-t8m_t9z=s900-c-k-c0x00ffffff-no-rj',
+    category: '경제/재테크',
+    subscriberCount: '340만명'
+  },
+  {
+    keywords: ['samprotv', '삼프로tv', '삼프로', '경제의신과함께', '3protv', '주식'],
+    channelId: 'UChlv4GSd7OQl3js-jkLOnFA',
+    title: '삼프로TV 3PROTV',
+    handle: '@3protv',
+    description: '국내외 거시경제 분석, 글로벌 증시 및 기업 심층 브리핑',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_n4L5P-s8v=s900-c-k-c0x00ffffff-no-rj',
+    category: '경제/재테크',
+    subscriberCount: '250만명'
+  },
+  {
+    keywords: ['jocoding', '조코딩', 'jocoding채널', 'ai', '코딩', '개발', 'chatgpt'],
+    channelId: 'UCQNE2JmbasNYbjGAcuBiRRg',
+    title: '조코딩 JoCoding',
+    handle: '@jocoding',
+    description: '누구나 쉽게 배우는 최신 AI 툴과 테크 트렌드 및 프로그래밍',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/Ju_n8o_3uH37U9jI01iWjLz2t8Yc8k8l7p=s900-c-k-c0x00ffffff-no-rj',
+    category: 'IT/테크',
+    subscriberCount: '62만명'
+  },
+  {
+    keywords: ['nomadcoders', '노마드코더', '노마드 코더', '개발자', '니꼬'],
+    channelId: 'UCUpJs89fSBXNolQGOYKn0YQ',
+    title: '노마드 코더 Nomad Coders',
+    handle: '@nomadcoders',
+    description: '글로벌 최신 테크 소식과 개발자 커리어, 신기술 리뷰',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_nomad=s900-c-k-c0x00ffffff-no-rj',
+    category: 'IT/테크',
+    subscriberCount: '51만명'
+  },
+  {
+    keywords: ['ttimestv', 'ttimes', '티타임즈', '티타임즈tv', '티타임스', '혁신', '빅테크'],
+    channelId: 'UCelFN6fJ6OY6v8pbc_SLiXA',
+    title: '티타임즈TV',
+    handle: '@TTimesTV',
+    description: '세상의 혁신과 비즈니스, 테크 트렌드를 가장 깊이 있게 분석하는 티타임즈TV 공식 채널',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_lk_PZbzPbJP9ZNfuzPC0U8_Q2dafVkwKhoNGi_G2pcjg=s900-c-k-c0x00ffffff-no-rj',
+    category: '비즈니스/스타트업',
+    subscriberCount: '35.5만명'
+  },
+  {
+    keywords: ['unrealscience', '안될과학', '과학', '궤도', '약', '항성'],
+    channelId: 'UCMc4EmuDxnHPc6pgGW-QWvQ',
+    title: '안될과학 Unrealscience',
+    handle: '@unrealscience',
+    description: '양자역학부터 우주, 첨단 AI 반도체까지 알기 쉬운 과학 지식',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_unreal=s900-c-k-c0x00ffffff-no-rj',
+    category: '과학/지식',
+    subscriberCount: '115만명'
+  },
+  {
+    keywords: ['eoeoeo', 'eo', '이오', '태용', '스타트업', 'eokorea', 'eo korea', '창업', 'ceo'],
+    channelId: 'UC5WXrNWV1Z8UqrBqYEMwvFg',
+    title: 'EO 이오',
+    handle: '@eoeoeo',
+    description: '글로벌 스타트업 혁신가들과 비즈니스 리더들의 스토리',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_eo=s900-c-k-c0x00ffffff-no-rj',
+    category: '비즈니스/스타트업',
+    subscriberCount: '68만명'
+  },
+  {
+    keywords: ['techmong', '테크몽', '전자기기', '갤럭시', '아이폰'],
+    channelId: 'UCFX6adXoyQKxft933NB3rmA',
+    title: '테크몽 Techmong',
+    handle: '@techmong',
+    description: '쉽고 친절한 IT 기기 및 테크 제품 심층 분석',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_techmong=s900-c-k-c0x00ffffff-no-rj',
+    category: 'IT/테크',
+    subscriberCount: '75만명'
+  },
+  {
+    keywords: ['1min', '1minonly', '1분만', '1분'],
+    channelId: 'UCM31rBPQdifQKUmBKtwVqBg',
+    title: '1분만',
+    handle: '@1minonly',
+    description: '세상의 모든 흥미로운 1분 지식과 이야기',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_1min=s900-c-k-c0x00ffffff-no-rj',
+    category: '과학/지식',
+    subscriberCount: '135만명'
+  },
+  {
+    keywords: ['sbsnews8', 'sbs뉴스', 'sbs 뉴스', 'sbsnews', 'sbs', '에스비에스', '스브스'],
     channelId: 'UCkinYTS9IHqOEwR1Sze2JTw',
     title: 'SBS 뉴스',
     handle: '@sbsnews8',
@@ -84,7 +185,7 @@ const KNOWN_CHANNELS_MAP: Array<{
     subscriberCount: '270만명'
   },
   {
-    keywords: ['ytnnews24', 'ytn', 'ytn뉴스'],
+    keywords: ['ytnnews24', 'ytn', 'ytn뉴스', '와이티엔'],
     channelId: 'UChlgI3UHCOnwUGzWzbJ3H5w',
     title: 'YTN',
     handle: '@ytnnews24',
@@ -94,7 +195,7 @@ const KNOWN_CHANNELS_MAP: Array<{
     subscriberCount: '460만명'
   },
   {
-    keywords: ['kbs_news', 'kbsnews', 'kbs 뉴스', 'kbs뉴스'],
+    keywords: ['kbs_news', 'kbsnews', 'kbs 뉴스', 'kbs뉴스', '케이블'],
     channelId: 'UCcQTRi69dsVYHN3exePtZ1A',
     title: 'KBS News',
     handle: '@kbs_news',
@@ -104,7 +205,7 @@ const KNOWN_CHANNELS_MAP: Array<{
     subscriberCount: '310만명'
   },
   {
-    keywords: ['jtbc_news', 'jtbcnews', 'jtbc 뉴스', 'jtbc뉴스', 'jtbc'],
+    keywords: ['jtbc_news', 'jtbcnews', 'jtbc 뉴스', 'jtbc뉴스', 'jtbc', '제이티비씨'],
     channelId: 'UCsU-I-vHLiaMfV_ceaYz5rQ',
     title: 'JTBC News',
     handle: '@jtbc_news',
@@ -144,7 +245,7 @@ const KNOWN_CHANNELS_MAP: Array<{
     subscriberCount: '220만명'
   },
   {
-    keywords: ['한국경제tv', '한국경제', 'hankyungtv', '한경tv'],
+    keywords: ['한국경제tv', '한국경제', 'hankyungtv', '한경tv', '한국경제신문'],
     channelId: 'UCF8AeLlUbEpKju6v1H6p8Eg',
     title: '한국경제TV',
     handle: '@한국경제TV',
@@ -154,7 +255,7 @@ const KNOWN_CHANNELS_MAP: Array<{
     subscriberCount: '110만명'
   },
   {
-    keywords: ['mtn_moneytoday', 'mtn', '머니투데이방송', '머니투데이'],
+    keywords: ['mtn_moneytoday', 'mtn', '머니투데이방송', '머니투데이', 'mtn머니투데이'],
     channelId: 'UClErHbdZKUnD1NyIUeQWvuQ',
     title: 'MTN 머니투데이방송',
     handle: '@mtn_moneytoday',
@@ -162,96 +263,6 @@ const KNOWN_CHANNELS_MAP: Array<{
     thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_mtn=s900-c-k-c0x00ffffff-no-rj',
     category: '경제/재테크',
     subscriberCount: '105만명'
-  },
-  {
-    keywords: ['jocoding', '조코딩', 'jocoding채널'],
-    channelId: 'UCQNE2JmbasNYbjGAcuBiRRg',
-    title: '조코딩 JoCoding',
-    handle: '@jocoding',
-    description: '누구나 쉽게 배우는 최신 AI 툴과 테크 트렌드 및 프로그래밍',
-    thumbnailUrl: 'https://yt3.googleusercontent.com/Ju_n8o_3uH37U9jI01iWjLz2t8Yc8k8l7p=s900-c-k-c0x00ffffff-no-rj',
-    category: 'IT/테크',
-    subscriberCount: '62만명'
-  },
-  {
-    keywords: ['shukaworld', '슈카월드', '슈카', '슈가월드', 'syuka', 'syukaworld'],
-    channelId: 'UCsJ6RuBiTVWRX156FVbeaGg',
-    title: '슈카월드',
-    handle: '@shukaworld',
-    description: '경제, 금융, 시사 이슈를 쉽고 재미있게 풀어주는 경제/인문 채널',
-    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_k8bBv4g9t-s7v-t8m_t9z=s900-c-k-c0x00ffffff-no-rj',
-    category: '경제/재테크',
-    subscriberCount: '340만명'
-  },
-  {
-    keywords: ['samprotv', '삼프로tv', '삼프로', '경제의신과함께', '3protv'],
-    channelId: 'UChlv4GSd7OQl3js-jkLOnFA',
-    title: '삼프로TV 3PROTV',
-    handle: '@3protv',
-    description: '국내외 거시경제 분석, 글로벌 증시 및 기업 심층 브리핑',
-    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_n4L5P-s8v=s900-c-k-c0x00ffffff-no-rj',
-    category: '경제/재테크',
-    subscriberCount: '250만명'
-  },
-  {
-    keywords: ['unrealscience', '안될과학'],
-    channelId: 'UCMc4EmuDxnHPc6pgGW-QWvQ',
-    title: '안될과학 Unrealscience',
-    handle: '@unrealscience',
-    description: '양자역학부터 우주, 첨단 AI 반도체까지 알기 쉬운 과학 지식',
-    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_unreal=s900-c-k-c0x00ffffff-no-rj',
-    category: '과학/지식',
-    subscriberCount: '115만명'
-  },
-  {
-    keywords: ['nomadcoders', '노마드코더'],
-    channelId: 'UCUpJs89fSBXNolQGOYKn0YQ',
-    title: '노마드 코더 Nomad Coders',
-    handle: '@nomadcoders',
-    description: '글로벌 최신 테크 소식과 개발자 커리어, 신기술 리뷰',
-    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_nomad=s900-c-k-c0x00ffffff-no-rj',
-    category: 'IT/테크',
-    subscriberCount: '51만명'
-  },
-  {
-    keywords: ['ttimestv', 'ttimes', '티타임즈', '티타임즈tv', '티타임스'],
-    channelId: 'UCelFN6fJ6OY6v8pbc_SLiXA',
-    title: '티타임즈TV',
-    handle: '@TTimesTV',
-    description: '세상의 혁신과 비즈니스, 테크 트렌드를 가장 깊이 있게 분석하는 티타임즈TV 공식 채널',
-    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_lk_PZbzPbJP9ZNfuzPC0U8_Q2dafVkwKhoNGi_G2pcjg=s900-c-k-c0x00ffffff-no-rj',
-    category: '비즈니스/스타트업',
-    subscriberCount: '35.5만명'
-  },
-  {
-    keywords: ['eoeoeo', 'eo', '이오', '태용', '스타트업', 'eokorea', 'eo korea'],
-    channelId: 'UC5WXrNWV1Z8UqrBqYEMwvFg',
-    title: 'EO 이오',
-    handle: '@eoeoeo',
-    description: '글로벌 스타트업 혁신가들과 비즈니스 리더들의 스토리',
-    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_eo=s900-c-k-c0x00ffffff-no-rj',
-    category: '비즈니스/스타트업',
-    subscriberCount: '68만명'
-  },
-  {
-    keywords: ['techmong', '테크몽'],
-    channelId: 'UCFX6adXoyQKxft933NB3rmA',
-    title: '테크몽 Techmong',
-    handle: '@techmong',
-    description: '쉽고 친절한 IT 기기 및 테크 제품 심층 분석',
-    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_techmong=s900-c-k-c0x00ffffff-no-rj',
-    category: 'IT/테크',
-    subscriberCount: '75만명'
-  },
-  {
-    keywords: ['1min', '1minonly', '1분만'],
-    channelId: 'UCM31rBPQdifQKUmBKtwVqBg',
-    title: '1분만',
-    handle: '@1minonly',
-    description: '세상의 모든 흥미로운 1분 지식과 이야기',
-    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_1min=s900-c-k-c0x00ffffff-no-rj',
-    category: '과학/지식',
-    subscriberCount: '135만명'
   }
 ];
 
@@ -615,174 +626,187 @@ app.post('/api/youtube/search-channels', async (req, res) => {
   }
 });
 
-// Helper to query YouTube Innertube API (Tier 1 Primary Engine)
+// Helper to query YouTube Innertube API (Tier 1 Primary Engine with Multi-Client Resilience)
 async function fetchYouTubeInnertubeSearch(queryStr: string, searchParams?: string): Promise<any[]> {
   const nowEpoch = Date.now();
-  try {
-    const payload: any = {
-      context: {
-        client: {
-          clientName: 'WEB',
-          clientVersion: '2.20240501.01.00',
-          hl: 'ko',
-          gl: 'KR'
-        }
-      },
-      query: queryStr
-    };
-    if (searchParams) {
-      payload.params = searchParams;
-    }
+  const CLIENT_CONFIGS = [
+    { clientName: 'WEB', clientVersion: '2.20250101.00.00' },
+    { clientName: 'MWEB', clientVersion: '2.20250101.00.00' },
+    { clientName: 'WEB', clientVersion: '2.20240501.01.00' },
+    { clientName: 'TVHTML5', clientVersion: '7.20240501.01.00' }
+  ];
 
-    const res = await fetch('https://www.youtube.com/youtubei/v1/search', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Cookie': 'SOCS=CAISNQgDEitib3FfaWRlbnRpdHlmc2J1aWxkdG9vbHNsYXVkZXJfc2VydmVyXzIwMjQwMjI1LjA1X3AwGgJrbxACGgJrbw; YSC=a; GPS=1'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!res.ok) return [];
-
-    const data = await res.json();
-    const parsedVideos: any[] = [];
-    const seenIds = new Set<string>();
-
-    const traverse = (node: any) => {
-      if (!node || typeof node !== 'object') return;
-
-      // 1. videoRenderer parser
-      if (node.videoRenderer) {
-        const vr = node.videoRenderer;
-        if (vr.videoId && !seenIds.has(vr.videoId)) {
-          seenIds.add(vr.videoId);
-          const title = vr.title?.runs?.map((r: any) => r.text).join('') || vr.title?.simpleText || '';
-          const channelTitle = vr.ownerText?.runs?.map((r: any) => r.text).join('') || vr.shortBylineText?.runs?.map((r: any) => r.text).join('') || '';
-          const channelId = vr.ownerText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || vr.shortBylineText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || '';
-          const channelThumbnail = vr.channelThumbnailSupportedRenderers?.channelThumbnailWithLinkRenderer?.thumbnail?.thumbnails?.[0]?.url || '';
-          const timeAgo = vr.publishedTimeText?.simpleText || '';
-          const viewCountText = vr.viewCountText?.simpleText || vr.viewCountText?.runs?.map((r: any) => r.text).join('') || '';
-          const lengthText = vr.lengthText?.simpleText || '';
-          const desc = vr.detailedMetadataSnippets?.[0]?.snippetText?.runs?.map((r: any) => r.text).join('') || vr.descriptionSnippet?.runs?.map((r: any) => r.text).join('') || '';
-          
-          let thumbnail = vr.thumbnail?.thumbnails?.slice(-1)[0]?.url || `https://i.ytimg.com/vi/${vr.videoId}/hqdefault.jpg`;
-          if (thumbnail.startsWith('//')) thumbnail = 'https:' + thumbnail;
-
-          if (title.trim()) {
-            const approxPubDate = parseRelativeTimeTextToIso(timeAgo, nowEpoch);
-            parsedVideos.push({
-              videoId: vr.videoId,
-              channelId: channelId || `ch-${vr.videoId}`,
-              channelTitle: channelTitle.trim() || 'YouTube Creator',
-              channelThumbnail: channelThumbnail.startsWith('//') ? 'https:' + channelThumbnail : channelThumbnail,
-              title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
-              description: desc.trim(),
-              timeAgo: timeAgo.trim(),
-              viewCountText: viewCountText.trim(),
-              duration: lengthText.trim(),
-              thumbnailUrl: thumbnail,
-              videoUrl: `https://www.youtube.com/watch?v=${vr.videoId}`,
-              publishedAt: approxPubDate
-            });
+  for (const clientCfg of CLIENT_CONFIGS) {
+    try {
+      const payload: any = {
+        context: {
+          client: {
+            ...clientCfg,
+            hl: 'ko',
+            gl: 'KR'
           }
-        }
+        },
+        query: queryStr
+      };
+      if (searchParams) {
+        payload.params = searchParams;
       }
 
-      // 2. compactVideoRenderer / gridVideoRenderer
-      if (node.compactVideoRenderer || node.gridVideoRenderer) {
-        const cvr = node.compactVideoRenderer || node.gridVideoRenderer;
-        if (cvr.videoId && !seenIds.has(cvr.videoId)) {
-          seenIds.add(cvr.videoId);
-          const title = cvr.title?.runs?.map((r: any) => r.text).join('') || cvr.title?.simpleText || '';
-          const channelTitle = cvr.shortBylineText?.runs?.map((r: any) => r.text).join('') || cvr.ownerText?.runs?.map((r: any) => r.text).join('') || '';
-          const channelId = cvr.shortBylineText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || cvr.ownerText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || '';
-          const timeAgo = cvr.publishedTimeText?.simpleText || '';
-          const viewCountText = cvr.viewCountText?.simpleText || '';
-          const lengthText = cvr.lengthText?.simpleText || '';
-          let thumbnail = cvr.thumbnail?.thumbnails?.slice(-1)[0]?.url || `https://i.ytimg.com/vi/${cvr.videoId}/hqdefault.jpg`;
-          if (thumbnail.startsWith('//')) thumbnail = 'https:' + thumbnail;
+      const res = await fetch('https://www.youtube.com/youtubei/v1/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+          'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+          'Origin': 'https://www.youtube.com',
+          'Referer': 'https://www.youtube.com/',
+          'Cookie': 'SOCS=CAISNQgDEitib3FfaWRlbnRpdHlmc2J1aWxkdG9vbHNsYXVkZXJfc2VydmVyXzIwMjQwMjI1LjA1X3AwGgJrbxACGgJrbw; YSC=a; GPS=1'
+        },
+        body: JSON.stringify(payload)
+      });
 
-          if (title.trim()) {
-            const approxPubDate = parseRelativeTimeTextToIso(timeAgo, nowEpoch);
-            parsedVideos.push({
-              videoId: cvr.videoId,
-              channelId: channelId || `ch-${cvr.videoId}`,
-              channelTitle: channelTitle.trim() || 'YouTube Creator',
-              channelThumbnail: '',
-              title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
-              description: '',
-              timeAgo: timeAgo.trim(),
-              viewCountText: viewCountText.trim(),
-              duration: lengthText.trim(),
-              thumbnailUrl: thumbnail,
-              videoUrl: `https://www.youtube.com/watch?v=${cvr.videoId}`,
-              publishedAt: approxPubDate
-            });
-          }
-        }
-      }
+      if (!res.ok) continue;
 
-      // 3. lockupViewModel parser (modern YouTube search structure)
-      if (node.lockupViewModel) {
-        const lvm = node.lockupViewModel;
-        const contentId = lvm.contentId;
-        if (contentId && !seenIds.has(contentId)) {
-          seenIds.add(contentId);
-          const title = lvm.metadata?.lockupMetadataViewModel?.title?.content || 
-                        lvm.rendererContext?.accessibilityContext?.label || '';
-          const metadataItems = lvm.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel?.metadataRows || [];
-          
-          let viewCountNumStr = '';
-          let timeAgoStr = '';
-          let chTitle = '';
+      const data = await res.json();
+      const parsedVideos: any[] = [];
+      const seenIds = new Set<string>();
 
-          for (const row of metadataItems) {
-            for (const part of (row.metadataParts || [])) {
-              const txt = part.text?.content || '';
-              if (txt.includes('조회수') || txt.includes('views')) {
-                viewCountNumStr = txt;
-              } else if (txt.includes('전') || txt.includes('ago') || txt.includes('스트리밍') || txt.includes('실시간')) {
-                timeAgoStr = txt;
-              } else if (!chTitle && txt.length > 0 && !txt.includes('조회수') && !txt.includes('분') && !txt.includes('초')) {
-                chTitle = txt;
-              }
+      const traverse = (node: any) => {
+        if (!node || typeof node !== 'object') return;
+
+        // 1. videoRenderer parser
+        if (node.videoRenderer) {
+          const vr = node.videoRenderer;
+          if (vr.videoId && !seenIds.has(vr.videoId)) {
+            seenIds.add(vr.videoId);
+            const title = vr.title?.runs?.map((r: any) => r.text).join('') || vr.title?.simpleText || '';
+            const channelTitle = vr.ownerText?.runs?.map((r: any) => r.text).join('') || vr.shortBylineText?.runs?.map((r: any) => r.text).join('') || '';
+            const channelId = vr.ownerText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || vr.shortBylineText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || '';
+            const channelThumbnail = vr.channelThumbnailSupportedRenderers?.channelThumbnailWithLinkRenderer?.thumbnail?.thumbnails?.[0]?.url || '';
+            const timeAgo = vr.publishedTimeText?.simpleText || '';
+            const viewCountText = vr.viewCountText?.simpleText || vr.viewCountText?.runs?.map((r: any) => r.text).join('') || '';
+            const lengthText = vr.lengthText?.simpleText || '';
+            const desc = vr.detailedMetadataSnippets?.[0]?.snippetText?.runs?.map((r: any) => r.text).join('') || vr.descriptionSnippet?.runs?.map((r: any) => r.text).join('') || '';
+            
+            let thumbnail = vr.thumbnail?.thumbnails?.slice(-1)[0]?.url || `https://i.ytimg.com/vi/${vr.videoId}/hqdefault.jpg`;
+            if (thumbnail.startsWith('//')) thumbnail = 'https:' + thumbnail;
+
+            if (title.trim()) {
+              const approxPubDate = parseRelativeTimeTextToIso(timeAgo, nowEpoch);
+              parsedVideos.push({
+                videoId: vr.videoId,
+                channelId: channelId || `ch-${vr.videoId}`,
+                channelTitle: channelTitle.trim() || 'YouTube Creator',
+                channelThumbnail: channelThumbnail.startsWith('//') ? 'https:' + channelThumbnail : channelThumbnail,
+                title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+                description: desc.trim(),
+                timeAgo: timeAgo.trim(),
+                viewCountText: viewCountText.trim(),
+                duration: lengthText.trim(),
+                thumbnailUrl: thumbnail,
+                videoUrl: `https://www.youtube.com/watch?v=${vr.videoId}`,
+                publishedAt: approxPubDate
+              });
             }
           }
+        }
 
-          if (title.trim()) {
-            const approxPubDate = parseRelativeTimeTextToIso(timeAgoStr, nowEpoch);
-            parsedVideos.push({
-              videoId: contentId,
-              channelId: `ch-${contentId}`,
-              channelTitle: chTitle || 'YouTube Creator',
-              channelThumbnail: '',
-              title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
-              description: '',
-              timeAgo: timeAgoStr.trim(),
-              viewCountText: viewCountNumStr.trim(),
-              duration: '',
-              thumbnailUrl: `https://i.ytimg.com/vi/${contentId}/hqdefault.jpg`,
-              videoUrl: `https://www.youtube.com/watch?v=${contentId}`,
-              publishedAt: approxPubDate
-            });
+        // 2. compactVideoRenderer / gridVideoRenderer
+        if (node.compactVideoRenderer || node.gridVideoRenderer) {
+          const cvr = node.compactVideoRenderer || node.gridVideoRenderer;
+          if (cvr.videoId && !seenIds.has(cvr.videoId)) {
+            seenIds.add(cvr.videoId);
+            const title = cvr.title?.runs?.map((r: any) => r.text).join('') || cvr.title?.simpleText || '';
+            const channelTitle = cvr.shortBylineText?.runs?.map((r: any) => r.text).join('') || cvr.ownerText?.runs?.map((r: any) => r.text).join('') || '';
+            const channelId = cvr.shortBylineText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || cvr.ownerText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || '';
+            const timeAgo = cvr.publishedTimeText?.simpleText || '';
+            const viewCountText = cvr.viewCountText?.simpleText || '';
+            const lengthText = cvr.lengthText?.simpleText || '';
+            let thumbnail = cvr.thumbnail?.thumbnails?.slice(-1)[0]?.url || `https://i.ytimg.com/vi/${cvr.videoId}/hqdefault.jpg`;
+            if (thumbnail.startsWith('//')) thumbnail = 'https:' + thumbnail;
+
+            if (title.trim()) {
+              const approxPubDate = parseRelativeTimeTextToIso(timeAgo, nowEpoch);
+              parsedVideos.push({
+                videoId: cvr.videoId,
+                channelId: channelId || `ch-${cvr.videoId}`,
+                channelTitle: channelTitle.trim() || 'YouTube Creator',
+                channelThumbnail: '',
+                title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+                description: '',
+                timeAgo: timeAgo.trim(),
+                viewCountText: viewCountText.trim(),
+                duration: lengthText.trim(),
+                thumbnailUrl: thumbnail,
+                videoUrl: `https://www.youtube.com/watch?v=${cvr.videoId}`,
+                publishedAt: approxPubDate
+              });
+            }
           }
         }
-      }
 
-      for (const k of Object.keys(node)) {
-        traverse(node[k]);
-      }
-    };
+        // 3. lockupViewModel parser (modern YouTube search structure)
+        if (node.lockupViewModel) {
+          const lvm = node.lockupViewModel;
+          const contentId = lvm.contentId;
+          if (contentId && !seenIds.has(contentId)) {
+            seenIds.add(contentId);
+            const title = lvm.metadata?.lockupMetadataViewModel?.title?.content || 
+                          lvm.rendererContext?.accessibilityContext?.label || '';
+            const metadataItems = lvm.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel?.metadataRows || [];
+            
+            let viewCountNumStr = '';
+            let timeAgoStr = '';
+            let chTitle = '';
 
-    traverse(data);
-    return parsedVideos;
-  } catch (err) {
-    console.warn('Innertube search error:', err);
-    return [];
+            for (const row of metadataItems) {
+              for (const part of (row.metadataParts || [])) {
+                const txt = part.text?.content || '';
+                if (txt.includes('조회수') || txt.includes('views')) {
+                  viewCountNumStr = txt;
+                } else if (txt.includes('전') || txt.includes('ago') || txt.includes('스트리밍') || txt.includes('실시간')) {
+                  timeAgoStr = txt;
+                } else if (!chTitle && txt.length > 0 && !txt.includes('조회수') && !txt.includes('분') && !txt.includes('초')) {
+                  chTitle = txt;
+                }
+              }
+            }
+
+            if (title.trim()) {
+              const approxPubDate = parseRelativeTimeTextToIso(timeAgoStr, nowEpoch);
+              parsedVideos.push({
+                videoId: contentId,
+                channelId: `ch-${contentId}`,
+                channelTitle: chTitle || 'YouTube Creator',
+                channelThumbnail: '',
+                title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+                description: '',
+                timeAgo: timeAgoStr.trim(),
+                viewCountText: viewCountNumStr.trim(),
+                duration: '',
+                thumbnailUrl: `https://i.ytimg.com/vi/${contentId}/hqdefault.jpg`,
+                videoUrl: `https://www.youtube.com/watch?v=${contentId}`,
+                publishedAt: approxPubDate
+              });
+            }
+          }
+        }
+
+        for (const k of Object.keys(node)) {
+          traverse(node[k]);
+        }
+      };
+
+      traverse(data);
+      if (parsedVideos.length > 0) {
+        return parsedVideos;
+      }
+    } catch (clientErr) {
+      // Continue to next client configuration
+    }
   }
+
+  return [];
 }
 
 // Real-Time YouTube Video Search Endpoint
@@ -1005,6 +1029,67 @@ app.post('/api/youtube/search-videos', async (req, res) => {
     // Step 4: If still no videos, try raw query without filter
     if (videos.length === 0) {
       videos = await fetchYouTubeInnertubeSearch(trimmed);
+    }
+
+    // Step 5: If still no videos, match against known channels catalog and fetch real-time channel RSS
+    if (videos.length === 0) {
+      const normalizedQuery = trimmed.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+      const matchedKnown = KNOWN_CHANNELS_MAP.filter(item => {
+        const titleNorm = item.title.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+        const handleNorm = item.handle.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+        return titleNorm.includes(normalizedQuery) || normalizedQuery.includes(titleNorm) ||
+               handleNorm.includes(normalizedQuery) || normalizedQuery.includes(handleNorm) ||
+               item.keywords.some(kw => {
+                 const kwNorm = kw.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+                 return kwNorm.includes(normalizedQuery) || normalizedQuery.includes(kwNorm);
+               });
+      });
+
+      for (const item of matchedKnown.slice(0, 3)) {
+        try {
+          const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${item.channelId}&_t=${Date.now()}`;
+          const rssRes = await fetch(rssUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
+            }
+          });
+          if (rssRes.ok) {
+            const xml = await rssRes.text();
+            const entries = xml.split('<entry>').slice(1);
+            for (const entry of entries) {
+              const vIdM = entry.match(/<yt:videoId>([^<]+)<\/yt:videoId>/);
+              const titM = entry.match(/<title>([^<]+)<\/title>/);
+              const pubM = entry.match(/<published>([^<]+)<\/published>/);
+              const descM = entry.match(/<media:description>([^<]*)<\/media:description>/s);
+              const thumbM = entry.match(/<media:thumbnail url="([^"]+)"/);
+
+              if (vIdM && titM && pubM) {
+                const vidId = vIdM[1].trim();
+                const tit = titM[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
+                const pubIso = new Date(pubM[1]).toISOString();
+                const timeStat = calculateVideoTimeStatus(pubIso);
+
+                videos.push({
+                  videoId: vidId,
+                  channelId: item.channelId,
+                  channelTitle: item.title,
+                  channelThumbnail: item.thumbnailUrl,
+                  title: tit,
+                  description: descM ? descM[1].trim() : '',
+                  timeAgo: timeStat.relativeTimeText || '최근',
+                  viewCountText: '',
+                  duration: '',
+                  thumbnailUrl: thumbM ? thumbM[1] : `https://i.ytimg.com/vi/${vidId}/hqdefault.jpg`,
+                  videoUrl: `https://www.youtube.com/watch?v=${vidId}`,
+                  publishedAt: pubIso
+                });
+              }
+            }
+          }
+        } catch (rssErr) {
+          console.warn(`Channel RSS fallback for ${item.title} failed:`, rssErr);
+        }
+      }
     }
 
     res.json({
