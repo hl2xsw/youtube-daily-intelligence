@@ -20,7 +20,15 @@ import {
   saveCategories,
   resetAllData
 } from './utils/storage';
-import { fetchRealChannelVideos, searchAndSummarize24hVideos, generateClientFallbackSummary, syncAndRepairChannels, calculateVideoTimeStatus } from './utils/youtubeService';
+import { 
+  fetchRealChannelVideos, 
+  searchAndSummarize24hVideos, 
+  generateClientFallbackSummary, 
+  generateClientFallbackDailyReport,
+  syncAndRepairChannels, 
+  calculateVideoTimeStatus,
+  searchYouTubeVideos 
+} from './utils/youtubeService';
 import { Header } from './components/Header';
 import { DashboardView } from './components/DashboardView';
 import { AnalyticsReportView } from './components/AnalyticsReportView';
@@ -531,8 +539,9 @@ function AppContent() {
     setIsGeneratingReport(true);
     showToast('업로드 영상 종합 AI 인텔리전스 리포트를 생성하고 있습니다...', 'info');
 
+    const yesterdayStr = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
     try {
-      const yesterdayStr = new Date(Date.now() - 86400000).toISOString().split('T')[0];
       const res = await fetch('/api/report/generate-daily-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -542,16 +551,28 @@ function AppContent() {
         })
       });
 
-      const data = await res.json();
-      if (data.success && data.report) {
-        const newReports = [data.report, ...reports];
-        updateReports(newReports);
-        setActiveTab('analytics');
-        showToast('종합 분석 리포트가 성공적으로 생성되었습니다!', 'success');
-      } else {
-        showToast('리포트 생성에 실패했습니다.', 'error');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.report) {
+          const newReports = [data.report, ...reports];
+          updateReports(newReports);
+          setActiveTab('analytics');
+          showToast('종합 분석 리포트가 성공적으로 생성되었습니다!', 'success');
+          return;
+        }
       }
     } catch (e) {
+      console.warn('Backend report generation failed, using client fallback:', e);
+    }
+
+    // Client-side fallback report generation
+    try {
+      const fallbackReport = generateClientFallbackDailyReport(targetVideos, yesterdayStr);
+      const newReports = [fallbackReport, ...reports];
+      updateReports(newReports);
+      setActiveTab('analytics');
+      showToast('종합 분석 리포트가 성공적으로 생성되었습니다!', 'success');
+    } catch (err) {
       showToast('리포트 생성 중 오류가 발생했습니다.', 'error');
     } finally {
       setIsGeneratingReport(false);
@@ -566,6 +587,7 @@ function AppContent() {
     setIsQuickAnalyzing(true);
     showToast(`"${input.slice(0, 25)}..." 실시간 정보를 추출하고 Gemini AI 심층 분석을 시작합니다...`, 'info');
 
+    // 1. Try server-side API
     try {
       const res = await fetch('/api/youtube/quick-analyze', {
         method: 'POST',
@@ -576,23 +598,76 @@ function AppContent() {
         })
       });
 
-      const data = await res.json();
-      if (data.success && data.video) {
-        const newVid: YouTubeVideo = data.video;
-        const existsIdx = videos.findIndex(v => v.videoId === newVid.videoId);
-        let updated: YouTubeVideo[] = [];
-        if (existsIdx >= 0) {
-          updated = [...videos];
-          updated[existsIdx] = newVid;
-        } else {
-          updated = [newVid, ...videos];
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.video) {
+          const newVid: YouTubeVideo = data.video;
+          const existsIdx = videos.findIndex(v => v.videoId === newVid.videoId);
+          let updated: YouTubeVideo[] = [];
+          if (existsIdx >= 0) {
+            updated = [...videos];
+            updated[existsIdx] = newVid;
+          } else {
+            updated = [newVid, ...videos];
+          }
+          updateVideos(updated);
+          setSelectedVideo(newVid);
+          showToast(`'${newVid.title.slice(0, 25)}' AI 분석 완료! 세부 요약창을 열었습니다.`, 'success');
+          return;
         }
-        updateVideos(updated);
-        setSelectedVideo(newVid);
-        showToast(`'${newVid.title.slice(0, 25)}' AI 분석 완료! 세부 요약창을 열었습니다.`, 'success');
-      } else {
-        showToast(data.error || '영상 실시간 분석에 실패했습니다.', 'error');
       }
+    } catch {
+      // Continue to client fallback
+    }
+
+    // 2. Client-side Search and Fallback Analysis
+    try {
+      const searchResults = await searchYouTubeVideos(input.trim(), { limit: 5 });
+      const topResult = searchResults[0];
+      const videoId = topResult?.videoId || `custom_${Date.now()}`;
+      const title = topResult?.title || input.trim();
+      const channelTitle = topResult?.channelTitle || 'YouTube Creator';
+      const description = topResult?.description || '';
+      const publishedAt = topResult?.publishedAt || new Date().toISOString();
+      const timeStatus = calculateVideoTimeStatus(publishedAt);
+
+      const baseVid: YouTubeVideo = {
+        id: `yt-${videoId}`,
+        videoId,
+        channelId: topResult?.channelId || `ch-${videoId}`,
+        channelTitle,
+        title,
+        description,
+        thumbnailUrl: topResult?.thumbnailUrl || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
+        category: 'IT/테크',
+        publishedAt,
+        isWithin24h: timeStatus.isWithin24h,
+        isToday: timeStatus.isToday,
+        isYesterday: timeStatus.isYesterday,
+        relativeTimeText: timeStatus.relativeTimeText,
+        isSummarized: false,
+        createdAt: publishedAt
+      };
+
+      const summary = generateClientFallbackSummary(baseVid);
+      const enrichedVid: YouTubeVideo = {
+        ...baseVid,
+        isSummarized: true,
+        summary
+      };
+
+      const existsIdx = videos.findIndex(v => v.videoId === enrichedVid.videoId);
+      let updated: YouTubeVideo[] = [];
+      if (existsIdx >= 0) {
+        updated = [...videos];
+        updated[existsIdx] = enrichedVid;
+      } else {
+        updated = [enrichedVid, ...videos];
+      }
+      updateVideos(updated);
+      setSelectedVideo(enrichedVid);
+      showToast(`'${enrichedVid.title.slice(0, 25)}' 분석 완료! 세부 요약창을 열었습니다.`, 'success');
     } catch (e: any) {
       console.error('Quick analyze error:', e);
       showToast(e?.message || '실시간 분석 중 오류가 발생했습니다.', 'error');

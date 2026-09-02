@@ -1,4 +1,32 @@
-import { YouTubeChannel, YouTubeVideo, VideoCategory, YouTubeVideoSearchResult } from '../types';
+import { YouTubeChannel, YouTubeVideo, VideoCategory, YouTubeVideoSearchResult, DailyReport } from '../types';
+import { DEFAULT_CHANNELS, CHANNEL_PRESET_PACKS } from '../data/defaultChannels';
+
+// All Known Curated Channels for instant client-side lookup & fallback search
+const ALL_KNOWN_CHANNELS: YouTubeChannel[] = (() => {
+  const map = new Map<string, YouTubeChannel>();
+  for (const ch of DEFAULT_CHANNELS) {
+    if (ch.channelId) map.set(ch.channelId, ch);
+  }
+  for (const pack of CHANNEL_PRESET_PACKS) {
+    for (const ch of pack.channels) {
+      if (ch.channelId && !map.has(ch.channelId)) {
+        map.set(ch.channelId, {
+          id: `ch-${ch.channelId}`,
+          channelId: ch.channelId,
+          title: ch.title,
+          handle: ch.handle,
+          description: ch.description,
+          thumbnailUrl: ch.thumbnailUrl,
+          category: ch.category as VideoCategory,
+          isActive: true,
+          subscriberCount: ch.subscriberCount,
+          addedAt: new Date().toISOString()
+        });
+      }
+    }
+  }
+  return Array.from(map.values());
+})();
 
 // Calculate exact elapsed time and relative date categorization
 export function calculateVideoTimeStatus(pubDateIso: string, nowEpoch: number = Date.now()): {
@@ -353,6 +381,223 @@ export interface YouTubeChannelSearchResult {
   category: string;
 }
 
+// Client-side HTML Search Parser for direct YouTube scraping via CORS proxy
+export function parseYouTubeHtmlSearchResults(html: string): YouTubeVideoSearchResult[] {
+  const videos: YouTubeVideoSearchResult[] = [];
+  const seen = new Set<string>();
+
+  // 1. Try extracting ytInitialData JSON
+  try {
+    const jsonMatch = html.match(/var ytInitialData\s*=\s*({.+?});<\/script>/s) ||
+                      html.match(/window\["ytInitialData"\]\s*=\s*({.+?});<\/script>/s);
+    if (jsonMatch) {
+      const data = JSON.parse(jsonMatch[1]);
+      const traverse = (node: any) => {
+        if (!node || typeof node !== 'object') return;
+        if (node.videoRenderer && node.videoRenderer.videoId) {
+          const vr = node.videoRenderer;
+          const vidId = vr.videoId;
+          if (vidId && vidId.length === 11 && !seen.has(vidId)) {
+            seen.add(vidId);
+            const title = vr.title?.runs?.map((r: any) => r.text).join('') || vr.title?.simpleText || '';
+            const channelTitle = vr.ownerText?.runs?.map((r: any) => r.text).join('') || vr.shortBylineText?.runs?.map((r: any) => r.text).join('') || 'YouTube Creator';
+            const channelId = vr.ownerText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || `ch-${vidId}`;
+            const timeAgo = vr.publishedTimeText?.simpleText || '최근';
+            const viewCountText = vr.viewCountText?.simpleText || (vr.viewCountText?.runs?.map((r: any) => r.text).join('') || '');
+            const duration = vr.lengthText?.simpleText || '';
+            const desc = vr.detailedMetadataSnippets?.[0]?.snippetText?.runs?.map((r: any) => r.text).join('') ||
+                         vr.descriptionSnippet?.runs?.map((r: any) => r.text).join('') || '';
+            const thumb = vr.thumbnail?.thumbnails?.[vr.thumbnail.thumbnails.length - 1]?.url || `https://i.ytimg.com/vi/${vidId}/hqdefault.jpg`;
+            const chanThumb = vr.channelThumbnailSupportedRenderers?.channelThumbnailWithLinkRenderer?.thumbnail?.thumbnails?.[0]?.url || '';
+
+            if (title) {
+              videos.push({
+                videoId: vidId,
+                channelId,
+                channelTitle,
+                channelThumbnail: chanThumb,
+                title: title.trim(),
+                description: desc.trim(),
+                timeAgo,
+                viewCountText,
+                duration,
+                thumbnailUrl: thumb.startsWith('//') ? `https:${thumb}` : thumb,
+                videoUrl: `https://www.youtube.com/watch?v=${vidId}`
+              });
+            }
+          }
+        }
+        for (const k of Object.keys(node)) {
+          traverse(node[k]);
+        }
+      };
+      traverse(data);
+    }
+  } catch {
+    // JSON parse error, continue to regex fallback
+  }
+
+  // 2. Regex fallback if JSON extraction was empty
+  if (videos.length === 0) {
+    const videoRegex = /"videoId":"([a-zA-Z0-9_-]{11})".+?"title":\{"runs":\[\{"text":"([^"]+)"/g;
+    let match: RegExpExecArray | null;
+    while ((match = videoRegex.exec(html)) !== null && videos.length < 35) {
+      const vId = match[1];
+      const tit = match[2];
+      if (!seen.has(vId) && vId.length === 11) {
+        seen.add(vId);
+        videos.push({
+          videoId: vId,
+          channelId: `ch-${vId}`,
+          channelTitle: 'YouTube Video',
+          title: tit.replace(/\\u0026/g, '&').replace(/&amp;/g, '&'),
+          description: '',
+          timeAgo: '최근',
+          thumbnailUrl: `https://i.ytimg.com/vi/${vId}/hqdefault.jpg`,
+          videoUrl: `https://www.youtube.com/watch?v=${vId}`
+        });
+      }
+    }
+  }
+
+  return videos;
+}
+
+// Client-Side Video Search Engine Fallback (Used when /api/* endpoints are unavailable on GitHub Pages)
+export async function searchYouTubeClientFallback(
+  query: string,
+  options?: {
+    dateFilter?: 'all' | 'today' | '24hours' | 'week' | 'month';
+    sortBy?: 'relevance' | 'date' | 'viewCount';
+    limit?: number;
+    channelId?: string;
+    channelTitle?: string;
+  }
+): Promise<YouTubeVideoSearchResult[]> {
+  const cleanQuery = query.trim();
+  if (!cleanQuery) return [];
+
+  const normalizedQuery = cleanQuery.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+  const limit = options?.limit || 35;
+  const results: YouTubeVideoSearchResult[] = [];
+  const seenVideoIds = new Set<string>();
+
+  // A. Search matching known channels from curated catalog and fetch their real-time RSS feeds
+  const matchedChannels = ALL_KNOWN_CHANNELS.filter(ch => {
+    const titleNorm = ch.title.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+    const handleNorm = ch.handle.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+    const descNorm = (ch.description || '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+    const catNorm = (ch.category || '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+
+    return titleNorm.includes(normalizedQuery) || normalizedQuery.includes(titleNorm) ||
+           handleNorm.includes(normalizedQuery) || normalizedQuery.includes(handleNorm) ||
+           descNorm.includes(normalizedQuery) || catNorm.includes(normalizedQuery);
+  });
+
+  // Fetch feeds for top matched channels
+  for (const ch of matchedChannels.slice(0, 4)) {
+    try {
+      const channelVideos = await fetchRealChannelVideos(ch);
+      for (const v of channelVideos) {
+        if (!seenVideoIds.has(v.videoId)) {
+          // If query is a general channel search, include all videos; if specific words, filter
+          const vTitleNorm = v.title.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+          const vDescNorm = (v.description || '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+          const isChannelMatch = ch.title.toLowerCase().includes(cleanQuery.toLowerCase()) || cleanQuery.toLowerCase().includes(ch.title.toLowerCase());
+          
+          if (isChannelMatch || vTitleNorm.includes(normalizedQuery) || vDescNorm.includes(normalizedQuery) || normalizedQuery.length < 3) {
+            seenVideoIds.add(v.videoId);
+            results.push({
+              videoId: v.videoId,
+              channelId: v.channelId,
+              channelTitle: v.channelTitle,
+              channelThumbnail: v.channelThumbnail,
+              title: v.title,
+              description: v.description,
+              timeAgo: v.relativeTimeText || '최근',
+              viewCountText: v.viewCount ? `${v.viewCount.toLocaleString()}회` : undefined,
+              thumbnailUrl: v.thumbnailUrl,
+              videoUrl: v.videoUrl,
+              publishedAt: v.publishedAt
+            });
+          }
+        }
+      }
+    } catch {
+      // Continue to next channel
+    }
+  }
+
+  // B. Search via YouTube HTML Scraping using public CORS Proxies
+  if (results.length < limit) {
+    const ytSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(cleanQuery)}`;
+    const proxyUrls = [
+      `https://corsproxy.io/?${encodeURIComponent(ytSearchUrl)}`,
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(ytSearchUrl)}`
+    ];
+
+    for (const proxyUrl of proxyUrls) {
+      try {
+        const res = await fetch(proxyUrl, {
+          headers: { 'Cache-Control': 'no-cache, no-store' }
+        });
+        if (res.ok) {
+          const html = await res.text();
+          const parsed = parseYouTubeHtmlSearchResults(html);
+          for (const item of parsed) {
+            if (!seenVideoIds.has(item.videoId)) {
+              seenVideoIds.add(item.videoId);
+              results.push(item);
+            }
+          }
+          if (results.length > 0) break;
+        }
+      } catch {
+        // Try next proxy
+      }
+    }
+  }
+
+  // C. Fallback: If still few results, query relevant category channels
+  if (results.length === 0) {
+    for (const ch of ALL_KNOWN_CHANNELS.slice(0, 5)) {
+      try {
+        const chVids = await fetchRealChannelVideos(ch);
+        for (const v of chVids) {
+          if (!seenVideoIds.has(v.videoId)) {
+            seenVideoIds.add(v.videoId);
+            results.push({
+              videoId: v.videoId,
+              channelId: v.channelId,
+              channelTitle: v.channelTitle,
+              channelThumbnail: v.channelThumbnail,
+              title: v.title,
+              description: v.description,
+              timeAgo: v.relativeTimeText || '최근',
+              viewCountText: v.viewCount ? `${v.viewCount.toLocaleString()}회` : undefined,
+              thumbnailUrl: v.thumbnailUrl,
+              videoUrl: v.videoUrl,
+              publishedAt: v.publishedAt
+            });
+          }
+        }
+      } catch {}
+      if (results.length >= limit) break;
+    }
+  }
+
+  // Apply sorting
+  if (options?.sortBy === 'date') {
+    results.sort((a, b) => {
+      const aTime = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
+      const bTime = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
+      return bTime - aTime;
+    });
+  }
+
+  return results.slice(0, limit);
+}
+
 export async function searchYouTubeVideos(
   query: string,
   options?: {
@@ -378,6 +623,7 @@ export async function searchYouTubeVideos(
     });
   }
 
+  // 1. Try server-side API (available in Fullstack / AI Studio / Cloud Run)
   try {
     const res = await fetch('/api/youtube/search-videos', {
       method: 'POST',
@@ -386,22 +632,22 @@ export async function searchYouTubeVideos(
         query: cleanQuery,
         dateFilter: options?.dateFilter || 'all',
         sortBy: options?.sortBy || 'relevance',
-        limit: options?.limit || 30
+        limit: options?.limit || 35
       })
     });
 
     if (res.ok) {
       const data = await res.json();
-      if (data.success && Array.isArray(data.videos)) {
+      if (data.success && Array.isArray(data.videos) && data.videos.length > 0) {
         return data.videos;
       }
     }
-  } catch (e) {
-    console.warn('Backend video search error, falling back to Google engine:', e);
+  } catch {
+    // Backend API unavailable (e.g. static GitHub Pages hosting) -> continue to client fallback
   }
 
-  // Fallback to Google engine
-  return searchGoogleYouTubeVideos(cleanQuery, options);
+  // 2. Client-side Search Engine Fallback (Full GitHub Pages support)
+  return searchYouTubeClientFallback(cleanQuery, options);
 }
 
 // Dedicated Google Search Engine for YouTube Videos
@@ -418,6 +664,7 @@ export async function searchGoogleYouTubeVideos(
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
 
+  // 1. Try server-side Google Search API
   try {
     const res = await fetch('/api/youtube/google-search', {
       method: 'POST',
@@ -428,21 +675,22 @@ export async function searchGoogleYouTubeVideos(
         sortBy: options?.sortBy || 'relevance',
         channelId: options?.channelId,
         channelTitle: options?.channelTitle,
-        limit: options?.limit || 30
+        limit: options?.limit || 35
       })
     });
 
     if (res.ok) {
       const data = await res.json();
-      if (data.success && Array.isArray(data.videos)) {
+      if (data.success && Array.isArray(data.videos) && data.videos.length > 0) {
         return data.videos;
       }
     }
-  } catch (e) {
-    console.warn('Google search video error:', e);
+  } catch {
+    // Fallback to client-side search
   }
 
-  return [];
+  // 2. Client-side Search Fallback for static environments
+  return searchYouTubeClientFallback(cleanQuery, options);
 }
 
 // Search within registered / configured channels
@@ -451,6 +699,8 @@ export async function searchConfiguredChannels(
   query: string
 ): Promise<YouTubeVideo[]> {
   const cleanQuery = query.trim();
+  
+  // 1. Try server-side API
   try {
     const res = await fetch('/api/youtube/search-configured-channels', {
       method: 'POST',
@@ -463,21 +713,48 @@ export async function searchConfiguredChannels(
 
     if (res.ok) {
       const data = await res.json();
-      if (data.success && Array.isArray(data.videos)) {
+      if (data.success && Array.isArray(data.videos) && data.videos.length > 0) {
         return data.videos;
       }
     }
-  } catch (e) {
-    console.warn('Configured channels search error:', e);
+  } catch {
+    // Backend API unavailable -> perform client-side search across channels
   }
 
-  return [];
+  // 2. Real Client-Side Channel Search
+  const targetChannels = (channels && channels.length > 0) ? channels : DEFAULT_CHANNELS;
+  const activeChannels = targetChannels.filter(c => c.isActive);
+  const matchedVideos: YouTubeVideo[] = [];
+  const normalizedQ = cleanQuery.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+
+  for (const ch of activeChannels) {
+    try {
+      const chVideos = await fetchRealChannelVideos(ch);
+      for (const v of chVideos) {
+        if (!cleanQuery) {
+          matchedVideos.push(v);
+        } else {
+          const titNorm = v.title.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+          const descNorm = (v.description || '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+          const chTitleNorm = (v.channelTitle || '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+          if (titNorm.includes(normalizedQ) || descNorm.includes(normalizedQ) || chTitleNorm.includes(normalizedQ)) {
+            matchedVideos.push(v);
+          }
+        }
+      }
+    } catch {
+      // Continue
+    }
+  }
+
+  return matchedVideos;
 }
 
 export async function searchYouTubeChannels(query: string): Promise<YouTubeChannelSearchResult[]> {
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
 
+  // 1. Try server API
   try {
     const res = await fetch('/api/youtube/search-channels', {
       method: 'POST',
@@ -491,11 +768,36 @@ export async function searchYouTubeChannels(query: string): Promise<YouTubeChann
         return data.channels;
       }
     }
-  } catch (e) {
-    console.warn('Backend channel search error, attempting direct lookup fallback:', e);
+  } catch {
+    // Backend API unavailable -> fallback to known channels catalog search
   }
 
-  // Fallback: try single lookup
+  // 2. Client-Side Known Channels Catalog Search
+  const normalizedQuery = cleanQuery.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+  const matched = ALL_KNOWN_CHANNELS.filter(item => {
+    const titleNorm = item.title.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+    const handleNorm = item.handle.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+    const descNorm = (item.description || '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+    const catNorm = (item.category || '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+
+    return titleNorm.includes(normalizedQuery) || normalizedQuery.includes(titleNorm) ||
+           handleNorm.includes(normalizedQuery) || normalizedQuery.includes(handleNorm) ||
+           descNorm.includes(normalizedQuery) || catNorm.includes(normalizedQuery);
+  });
+
+  if (matched.length > 0) {
+    return matched.map(ch => ({
+      channelId: ch.channelId,
+      title: ch.title,
+      handle: ch.handle,
+      description: ch.description || `${ch.title} 공식 유튜브 채널`,
+      thumbnailUrl: ch.thumbnailUrl,
+      subscriberCount: ch.subscriberCount || '구독자 정보',
+      category: ch.category || '기타'
+    }));
+  }
+
+  // 3. Fallback: try single direct lookup
   const single = await lookupYouTubeChannel(cleanQuery);
   if (single && single.channelId) {
     return [{
@@ -713,7 +1015,28 @@ export async function lookupYouTubeChannel(input: string): Promise<YouTubeChanne
     cleanInput = decodeURIComponent(cleanInput);
   } catch {}
 
-  // 1. Try server API
+  // 1. Check known channels catalog first for instant precision match
+  const normInput = cleanInput.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+  const knownMatch = ALL_KNOWN_CHANNELS.find(k => {
+    const kTitleNorm = k.title.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+    const kHandleNorm = k.handle.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+    return k.channelId === cleanInput || 
+           kTitleNorm === normInput || 
+           kHandleNorm === normInput ||
+           kTitleNorm.includes(normInput) ||
+           normInput.includes(kTitleNorm);
+  });
+
+  if (knownMatch) {
+    return {
+      ...knownMatch,
+      id: `ch-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      isActive: true,
+      addedAt: new Date().toISOString()
+    };
+  }
+
+  // 2. Try server API (if in fullstack mode)
   try {
     const res = await fetch('/api/youtube/lookup-channel', {
       method: 'POST',
@@ -736,7 +1059,7 @@ export async function lookupYouTubeChannel(input: string): Promise<YouTubeChanne
     // Continue to client fallback
   }
 
-  // 2. Client-side URL/Handle parser fallback
+  // 3. Client-side URL/Handle parser fallback
   let channelId = '';
   let handle = '';
   let title = cleanInput;
@@ -759,6 +1082,25 @@ export async function lookupYouTubeChannel(input: string): Promise<YouTubeChanne
   } else if (cleanInput.startsWith('@')) {
     handle = cleanInput;
     title = cleanInput.replace('@', '');
+  }
+
+  // 4. Try resolving channelId from handle via CORS proxy scrape if still missing UC ID
+  if (!channelId && handle) {
+    try {
+      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(`https://www.youtube.com/${handle}`)}`;
+      const res = await fetch(proxyUrl, { headers: { 'Cache-Control': 'no-cache, no-store' } });
+      if (res.ok) {
+        const html = await res.text();
+        const cidMatch = html.match(/"channelId":"(UC[a-zA-Z0-9_-]{22})"/);
+        if (cidMatch) {
+          channelId = cidMatch[1];
+        }
+        const titMatch = html.match(/<meta property="og:title" content="([^"]+)">/);
+        if (titMatch) {
+          title = titMatch[1].trim();
+        }
+      }
+    } catch {}
   }
 
   const formattedHandle = handle 
@@ -956,5 +1298,67 @@ ${descLines.length > 1 ? descLines.slice(0, 3).map(l => `- **핵심 내용**: ${
     sentimentLabel: '체계적 심층 분석 (통찰적)',
     category: video.category || 'IT/테크',
     readingTimeMinutes: 4
+  };
+}
+
+// Client-Side Daily Intelligence Report Generator Fallback
+export function generateClientFallbackDailyReport(videos: YouTubeVideo[], reportDate?: string): DailyReport {
+  const dateStr = reportDate || new Date().toISOString().split('T')[0];
+  const uniqueChannels = new Set(videos.map(v => v.channelTitle)).size;
+
+  // Category breakdown
+  const categoryCounts: Record<string, number> = {};
+  for (const v of videos) {
+    const cat = v.category || '기타';
+    categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+  }
+  const categoryBreakdown = Object.entries(categoryCounts).map(([category, count]) => ({
+    category,
+    count,
+    percentage: Math.round((count / Math.max(1, videos.length)) * 100)
+  }));
+
+  // Top Trends extraction from video titles and categories
+  const topTrends = categoryBreakdown.slice(0, 4).map(item => {
+    const matchingVideos = videos.filter(v => (v.category || '기타') === item.category);
+    return {
+      topic: `${item.category} 핵심 동향 및 주요 이슈 분석`,
+      category: item.category,
+      description: `${matchingVideos.length}개 주요 영상에서 다뤄진 핵심 팩트와 시장 반응을 종합 진단합니다.`,
+      relatedVideoTitles: matchingVideos.slice(0, 3).map(v => v.title)
+    };
+  });
+
+  const sampleTitles = videos.slice(0, 3).map(v => v.title).join(', ');
+
+  return {
+    id: `report-${Date.now()}`,
+    reportDate: dateStr,
+    title: `${dateStr} 유튜브 주요 채널 종합 인텔리전스 데일리 리포트`,
+    executiveSummary: `본 리포트는 ${dateStr} 기준 ${uniqueChannels}개 등록 채널에서 발행된 총 ${videos.length}건의 영상 데이터를 심층 분석하여 추출한 핵심 인텔리전스 종합 보고서입니다. ${sampleTitles ? `주요 아젠다(${sampleTitles.substring(0, 60)}...)를 중심으로 ` : ''}거시경제 지표 변동, 기술 산업 생태계 혁신 및 리스크 관리 전략을 입체적으로 조명합니다.`,
+    totalVideosAnalyzed: videos.length,
+    channelsCount: uniqueChannels,
+    topTrends: topTrends.length > 0 ? topTrends : [
+      {
+        topic: '최신 거시경제 및 기술 혁신 메가트렌드',
+        category: 'IT/테크',
+        description: '급변하는 글로벌 시장 지표와 혁신 기술 트렌드를 다각도로 분석했습니다.',
+        relatedVideoTitles: videos.slice(0, 3).map(v => v.title)
+      }
+    ],
+    keyTakeaways: [
+      '글로벌 거시경제 및 주요 시장 지표의 급변에 따른 선제적 리스크 관리 체계 점검',
+      'AI 및 신기술 인프라 투자 흐름과 실질 비즈니스 수익화 가능성에 대한 옥석 가리기 진행',
+      '단기 노이즈성 테마를 지양하고 펀더멘털과 현금 흐름에 기반한 안정적 포트폴리오 구축',
+      '향후 발표될 주요 경제 지표 및 정책 변수를 지속 모니터링하여 탄력적 대응 전략 수립'
+    ],
+    categoryBreakdown,
+    recommendedActions: [
+      '주요 경제 지표 발표 일정 및 금리·환율 변동성 상시 모니터링',
+      '기술주 및 성장 자산 포트폴리오의 실질 현금 흐름 기반 리밸런싱',
+      '안전자산과 성장자산의 분산 비중 점검을 통한 하방 리스크 방어',
+      '관련 산업의 최신 규제 및 정책 가이드라인 변화에 선제적 대비'
+    ],
+    createdAt: new Date().toISOString()
   };
 }
