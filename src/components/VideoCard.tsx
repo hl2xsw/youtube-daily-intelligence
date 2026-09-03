@@ -25,7 +25,7 @@ import {
   generateVideoWordDoc, 
   downloadFile 
 } from '../utils/exportUtils';
-import { formatVideoKstDate } from '../utils/youtubeService';
+import { formatVideoKstDate, getYouTubeChannelUrl } from '../utils/youtubeService';
 import { useToast } from './Toast';
 
 interface VideoCardProps {
@@ -107,22 +107,39 @@ export const VideoCard: React.FC<VideoCardProps> = ({
       {/* Top Header info */}
       <div className="p-4 sm:p-4.5 pb-2.5 flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
-          {video.channelThumbnail ? (
-            <img 
-              src={video.channelThumbnail} 
-              alt={video.channelTitle}
-              referrerPolicy="no-referrer"
-              className="w-7 h-7 rounded-full object-cover border border-slate-200 shrink-0" 
-            />
-          ) : (
-            <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-xs font-semibold text-slate-600 shrink-0">
-              {video.channelTitle.charAt(0)}
-            </div>
-          )}
+          <a
+            href={getYouTubeChannelUrl({ channelId: video.channelId, title: video.channelTitle })}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="shrink-0 group/av hover:opacity-85 transition-opacity"
+            title={`'${video.channelTitle}' 유튜브 채널로 이동하여 확인`}
+          >
+            {video.channelThumbnail ? (
+              <img 
+                src={video.channelThumbnail} 
+                alt={video.channelTitle}
+                referrerPolicy="no-referrer"
+                className="w-7 h-7 rounded-full object-cover border border-slate-200 group-hover/av:ring-1 group-hover/av:ring-red-500 transition-all" 
+              />
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-xs font-semibold text-slate-600">
+                {video.channelTitle.charAt(0)}
+              </div>
+            )}
+          </a>
           <div className="min-w-0">
-            <h4 className="text-xs font-semibold text-slate-900 truncate" title={video.channelTitle}>
-              {video.channelTitle}
-            </h4>
+            <a
+              href={getYouTubeChannelUrl({ channelId: video.channelId, title: video.channelTitle })}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="text-xs font-semibold text-slate-900 hover:text-red-600 truncate flex items-center gap-1 group/ch transition-colors"
+              title={`'${video.channelTitle}' 유튜브 채널 새 탭에서 열어 확인`}
+            >
+              <span className="truncate">{video.channelTitle}</span>
+              <ExternalLink className="w-2.5 h-2.5 text-slate-400 group-hover/ch:text-red-500 shrink-0" />
+            </a>
             <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
               <Calendar className="w-3 h-3 text-slate-400" />
               <span>{formattedDate}</span>

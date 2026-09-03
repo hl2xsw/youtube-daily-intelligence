@@ -30,6 +30,7 @@ import {
   generateVideoWordDoc, 
   downloadFile 
 } from '../utils/exportUtils';
+import { getYouTubeChannelUrl } from '../utils/youtubeService';
 import { useToast } from './Toast';
 
 interface VideoDetailModalProps {
@@ -134,7 +135,16 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
             )}
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                <span className="text-xs font-bold text-slate-800">{video.channelTitle}</span>
+                <a
+                  href={getYouTubeChannelUrl({ channelId: video.channelId, title: video.channelTitle })}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-bold text-slate-800 hover:text-red-600 truncate flex items-center gap-1 group/ch transition-colors"
+                  title={`'${video.channelTitle}' 유튜브 채널로 이동하여 확인`}
+                >
+                  <span>{video.channelTitle}</span>
+                  <ExternalLink className="w-2.5 h-2.5 text-slate-400 group-hover/ch:text-red-500 shrink-0" />
+                </a>
                 {video.relativeTimeText && (
                   <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200/80">
                     {video.relativeTimeText}
@@ -279,13 +289,24 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
             </button>
 
             <a
+              href={getYouTubeChannelUrl({ channelId: video.channelId, title: video.channelTitle })}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2.5 py-1 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-md transition-colors flex items-center gap-1 shadow-2xs group/ch"
+              title={`'${video.channelTitle}' 유튜브 채널로 이동하여 확인`}
+            >
+              <ExternalLink className="w-3 h-3 text-red-500 group-hover/ch:translate-x-0.5 transition-transform" />
+              <span>채널 확인</span>
+            </a>
+
+            <a
               href={video.videoUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="px-2.5 py-1 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 rounded-md transition-colors flex items-center gap-1"
             >
               <Tv2 className="w-3.5 h-3.5 text-red-500" />
-              유튜브 바로가기
+              영상 바로가기
               <ExternalLink className="w-2.5 h-2.5 text-slate-400" />
             </a>
           </div>

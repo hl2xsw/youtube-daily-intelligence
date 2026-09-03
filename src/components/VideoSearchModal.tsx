@@ -17,7 +17,12 @@ import {
   Loader2
 } from 'lucide-react';
 import { YouTubeVideo, YouTubeVideoSearchResult, YouTubeChannel } from '../types';
-import { searchYouTubeVideos, searchGoogleYouTubeVideos, searchConfiguredChannels } from '../utils/youtubeService';
+import { 
+  searchYouTubeVideos, 
+  searchGoogleYouTubeVideos, 
+  searchConfiguredChannels,
+  getYouTubeChannelUrl
+} from '../utils/youtubeService';
 import { useToast } from './Toast';
 
 interface VideoSearchModalProps {
@@ -568,63 +573,89 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
 
                         {/* Channel & Meta */}
                         <div className="flex items-center justify-between gap-2 mb-1.5">
-                          <div className="flex items-center gap-2 min-w-0">
-                            {video.channelThumbnail ? (
-                              <img
-                                src={video.channelThumbnail}
-                                alt={video.channelTitle || '채널'}
-                                className="w-5 h-5 rounded-full object-cover border border-slate-200 shrink-0"
-                              />
-                            ) : (
-                              <div className="w-5 h-5 rounded-full bg-slate-800 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
-                                {(video.channelTitle || 'Y').charAt(0)}
-                              </div>
-                            )}
-                            <span className="text-xs font-semibold text-slate-700 truncate">
-                              {video.channelTitle || 'YouTube Creator'}
-                            </span>
-                          </div>
+                          {(() => {
+                            const chTitle = video.channelTitle || 'YouTube Creator';
+                            const chUrl = getYouTubeChannelUrl({ channelId: video.channelId, title: chTitle });
+                            const isChannelRegistered = (channels || []).some(c => 
+                              (c && video.channelId && c.channelId && c.channelId === video.channelId) || 
+                              (c && c.title && chTitle && c.title.toLowerCase() === chTitle.toLowerCase())
+                            );
 
-                          {/* 1-click Channel Subscription */}
-                          {onAddChannel && (
-                            (() => {
-                              const chTitle = video.channelTitle || '';
-                              const isChannelRegistered = (channels || []).some(c => 
-                                (c && video.channelId && c.channelId && c.channelId === video.channelId) || 
-                                (c && c.title && chTitle && c.title.toLowerCase() === chTitle.toLowerCase())
-                              );
-                              if (isChannelRegistered) {
-                                return (
-                                  <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded font-medium shrink-0">
-                                    구독중
-                                  </span>
-                                );
-                              }
-                              return (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const safeChTitle = video.channelTitle || 'YouTube Channel';
-                                    onAddChannel({
-                                      channelId: video.channelId || `ch-${safeChTitle}`,
-                                      title: safeChTitle,
-                                      handle: `@${safeChTitle.replace(/\s+/g, '').toLowerCase()}`,
-                                      thumbnailUrl: video.channelThumbnail || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
-                                      category: (categories && categories[0]) || 'IT/테크',
-                                      isActive: true,
-                                      subscriberCount: '10만+'
-                                    });
-                                  }}
-                                  className="text-[10px] font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded transition-colors shrink-0 flex items-center gap-0.5"
-                                  title="이 채널을 일일 모니터링 목록에 추가"
+                            return (
+                              <>
+                                <a
+                                  href={chUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="flex items-center gap-2 min-w-0 group/ch hover:opacity-80 transition-opacity"
+                                  title={`'${chTitle}' 유튜브 채널로 이동하여 확인`}
                                 >
-                                  <Plus className="w-3 h-3" />
-                                  <span>채널 모니터링</span>
-                                </button>
-                              );
-                            })()
-                          )}
+                                  {video.channelThumbnail ? (
+                                    <img
+                                      src={video.channelThumbnail}
+                                      alt={chTitle}
+                                      className="w-5 h-5 rounded-full object-cover border border-slate-200 shrink-0"
+                                    />
+                                  ) : (
+                                    <div className="w-5 h-5 rounded-full bg-slate-800 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                                      {chTitle.charAt(0)}
+                                    </div>
+                                  )}
+                                  <span className="text-xs font-semibold text-slate-700 group-hover/ch:text-red-600 truncate flex items-center gap-1">
+                                    <span className="truncate">{chTitle}</span>
+                                    <ExternalLink className="w-2.5 h-2.5 text-slate-400 group-hover/ch:text-red-500 shrink-0" />
+                                  </span>
+                                </a>
+
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {/* 유튜브 채널 확인 링크 */}
+                                  <a
+                                    href={chUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="px-1.5 py-0.5 text-[10px] font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded flex items-center gap-0.5 transition-colors shadow-2xs"
+                                    title={`'${chTitle}' 유튜브 채널 새 탭에서 열어 확인`}
+                                  >
+                                    <ExternalLink className="w-2.5 h-2.5 text-red-500" />
+                                    <span>채널 확인</span>
+                                  </a>
+
+                                  {/* 1-click Channel Subscription */}
+                                  {onAddChannel && (
+                                    isChannelRegistered ? (
+                                      <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded font-medium shrink-0">
+                                        구독중
+                                      </span>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const safeChTitle = video.channelTitle || 'YouTube Channel';
+                                          onAddChannel({
+                                            channelId: video.channelId || `ch-${safeChTitle}`,
+                                            title: safeChTitle,
+                                            handle: `@${safeChTitle.replace(/\s+/g, '').toLowerCase()}`,
+                                            thumbnailUrl: video.channelThumbnail || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
+                                            category: (categories && categories[0]) || 'IT/테크',
+                                            isActive: true,
+                                            subscriberCount: '10만+'
+                                          });
+                                        }}
+                                        className="text-[10px] font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded transition-colors shrink-0 flex items-center gap-0.5"
+                                        title="이 채널을 일일 모니터링 목록에 추가"
+                                      >
+                                        <Plus className="w-3 h-3" />
+                                        <span>채널 모니터링</span>
+                                      </button>
+                                    )
+                                  )}
+                                </div>
+                              </>
+                            );
+                          })()}
                         </div>
 
                         {/* Title */}
