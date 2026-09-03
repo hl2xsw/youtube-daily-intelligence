@@ -262,25 +262,48 @@ export const VideoCard: React.FC<VideoCardProps> = ({
         )}
 
         {/* Collapsible Expanded Details */}
-        {isExpanded && s && (
-          <div className="mt-2.5 pt-2.5 border-t border-slate-100 space-y-2.5 text-xs">
+        {isExpanded && (
+          <div className="mt-2.5 pt-2.5 border-t border-slate-100 space-y-3 text-xs">
             {/* Detailed Summary */}
+            {s?.detailedSummary && (
+              <div>
+                <h5 className="font-bold text-slate-900 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <FileText className="w-3.5 h-3.5 text-blue-600" />
+                    상세 맥락 요약 (In-Depth Summary)
+                  </span>
+                  <span className="text-[10px] text-blue-600 font-semibold bg-blue-50 px-1.5 py-0.5 rounded">
+                    상세 보고서
+                  </span>
+                </h5>
+                <div className="text-slate-700 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200/90 whitespace-pre-line">
+                  {s.detailedSummary}
+                </div>
+              </div>
+            )}
+
+            {/* Video Context & Original Description */}
             <div>
-              <h5 className="font-semibold text-slate-800 mb-1 flex items-center gap-1">
-                <FileText className="w-3.5 h-3.5 text-blue-600" />
-                상세 요약
+              <h5 className="font-bold text-slate-900 mb-1 flex items-center justify-between">
+                <span className="flex items-center gap-1">
+                  <Tag className="w-3.5 h-3.5 text-slate-600" />
+                  영상 배경 및 원본 설명
+                </span>
+                <span className="text-[10px] text-slate-500 font-medium">
+                  {video.fullDescription ? '전체 설명 확보' : '요약 해설'}
+                </span>
               </h5>
-              <p className="text-slate-600 leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-200/70">
-                {s.detailedSummary}
-              </p>
+              <div className="text-slate-600 text-[11px] leading-relaxed bg-slate-100/70 p-2.5 rounded-lg border border-slate-200 whitespace-pre-line max-h-48 overflow-y-auto">
+                {video.fullDescription || s?.generatedFullDescription || video.description || '원본 설명이 등록되지 않은 영상입니다.'}
+              </div>
             </div>
 
             {/* Timeline Breakdown */}
-            {s.timelineSummary && s.timelineSummary.length > 0 && (
+            {s?.timelineSummary && s.timelineSummary.length > 0 && (
               <div>
-                <h5 className="font-semibold text-slate-800 mb-1 flex items-center gap-1">
+                <h5 className="font-bold text-slate-900 mb-1 flex items-center gap-1">
                   <Clock className="w-3.5 h-3.5 text-slate-600" />
-                  타임라인별 요약
+                  타임라인별 핵심 내용
                 </h5>
                 <div className="space-y-1 bg-slate-50 p-2 rounded-lg border border-slate-200/70">
                   {s.timelineSummary.map((t, i) => (
@@ -299,16 +322,16 @@ export const VideoCard: React.FC<VideoCardProps> = ({
             )}
 
             {/* Takeaways */}
-            {s.takeaways && s.takeaways.length > 0 && (
+            {s?.takeaways && s.takeaways.length > 0 && (
               <div>
-                <h5 className="font-semibold text-slate-800 mb-1 flex items-center gap-1">
+                <h5 className="font-bold text-slate-900 mb-1 flex items-center gap-1">
                   <Lightbulb className="w-3.5 h-3.5 text-amber-600" />
-                  시사점
+                  실무 및 투자 시사점
                 </h5>
-                <ul className="space-y-1">
+                <ul className="space-y-1 bg-amber-50/50 p-2.5 rounded-lg border border-amber-200/60">
                   {s.takeaways.map((item, i) => (
-                    <li key={i} className="flex items-start gap-1.5 text-slate-600">
-                      <span className="text-slate-400 font-bold">•</span>
+                    <li key={i} className="flex items-start gap-1.5 text-slate-700 text-[11px] leading-relaxed">
+                      <span className="text-amber-500 font-bold">•</span>
                       <span>{item}</span>
                     </li>
                   ))}
@@ -317,10 +340,10 @@ export const VideoCard: React.FC<VideoCardProps> = ({
             )}
 
             {/* Keywords */}
-            {s.keywords && s.keywords.length > 0 && (
+            {s?.keywords && s.keywords.length > 0 && (
               <div className="flex flex-wrap gap-1 pt-1">
                 {s.keywords.map((k, i) => (
-                  <span key={i} className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-medium">
+                  <span key={i} className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-medium border border-slate-200">
                     #{k}
                   </span>
                 ))}

@@ -110,20 +110,20 @@ function AppContent() {
       }
     }
 
-    // Retain up to 30 days (720h) with fresh timeStatus
+    // Retain strictly videos within 24 hours (purge 8-day-old or older videos)
     const cleanedList = Array.from(mergedMap.values())
       .filter(v => {
         if (!v || !v.videoId) return false;
         const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
-        if (isNaN(pubTime) || pubTime === 0) return true;
+        if (isNaN(pubTime) || pubTime === 0) return false;
         const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
-        return diffHours <= 720.0;
+        return diffHours >= -2.0 && diffHours <= 24.0;
       })
       .map(v => {
         const timeStatus = calculateVideoTimeStatus(v.publishedAt, nowEpoch);
         return {
           ...v,
-          isWithin24h: timeStatus.isWithin24h,
+          isWithin24h: true,
           isToday: timeStatus.isToday,
           isYesterday: timeStatus.isYesterday,
           relativeTimeText: timeStatus.relativeTimeText || v.relativeTimeText
@@ -281,20 +281,20 @@ function AppContent() {
         }
       }
 
-      // Clean list: keep within 30 days (720 hours) and calculate fresh time status
+      // Clean list: strictly keep within 24 hours (purge 8-day-old or older videos)
       const cleanedList = Array.from(mergedMap.values())
         .filter(v => {
           if (!v || !v.videoId) return false;
           const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
-          if (isNaN(pubTime) || pubTime === 0) return true;
+          if (isNaN(pubTime) || pubTime === 0) return false;
           const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
-          return diffHours <= 720.0;
+          return diffHours >= -2.0 && diffHours <= 24.0;
         })
         .map(v => {
           const timeStatus = calculateVideoTimeStatus(v.publishedAt, nowEpoch);
           return {
             ...v,
-            isWithin24h: timeStatus.isWithin24h,
+            isWithin24h: true,
             isToday: timeStatus.isToday,
             isYesterday: timeStatus.isYesterday,
             relativeTimeText: timeStatus.relativeTimeText || v.relativeTimeText

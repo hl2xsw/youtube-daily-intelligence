@@ -73,25 +73,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     ];
   }, [categories]);
 
-  // Auto-detect optimal initial date filter so users never face a blank 0-items screen
+  // Auto-detect optimal initial date filter - default strictly to 24hours
   const [userManuallySelectedDate, setUserManuallySelectedDate] = useState(false);
-  const [searchScope, setSearchScope] = useState<'all' | 'filtered'>('all'); // When searching, default to all-time scope
+  const [searchScope, setSearchScope] = useState<'24hours' | 'all'>('24hours'); // Search strictly within 24 hours by default
 
-  // Filters State
+  // Filters State - default to 24hours strictly
   const [filters, setFilters] = useState<FilterState>({
     category: 'ALL',
     channelId: 'ALL',
-    dateFilter: 'all',
+    dateFilter: '24hours',
     searchQuery: '',
     statusFilter: 'all'
   });
 
-  // Calculate quick metrics with precise 24h/today/yesterday evaluation
+  // Calculate quick metrics with precise 24h/today evaluation
   const todayVideos = useMemo(() => {
     const now = Date.now();
     return videos.filter(v => {
       const status = calculateVideoTimeStatus(v.publishedAt, now);
-      return status.isToday || v.isToday;
+      return (status.isToday || v.isToday) && status.diffHours <= 24.0;
     });
   }, [videos]);
 
@@ -99,7 +99,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const now = Date.now();
     return videos.filter(v => {
       const status = calculateVideoTimeStatus(v.publishedAt, now);
-      return status.isWithin24h || v.isWithin24h;
+      return (status.isWithin24h || v.isWithin24h) && status.diffHours <= 24.0;
     });
   }, [videos]);
 
@@ -107,33 +107,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const now = Date.now();
     return videos.filter(v => {
       const status = calculateVideoTimeStatus(v.publishedAt, now);
-      return status.isYesterday || v.isYesterday;
+      return status.isYesterday && status.diffHours <= 24.0;
     });
   }, [videos]);
 
-  const recent3DaysVideos = useMemo(() => {
-    const now = Date.now();
-    return videos.filter(v => {
-      const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
-      const diffHours = (now - pubTime) / (1000 * 60 * 60);
-      return diffHours <= 72.0;
-    });
-  }, [videos]);
-
-  // Set intelligent initial date filter on first load or when videos change
+  // Set initial date filter strictly to 24hours
   useEffect(() => {
     if (!userManuallySelectedDate) {
-      if (within24hVideos.length > 0) {
-        setFilters(prev => ({ ...prev, dateFilter: '24hours' }));
-      } else if (todayVideos.length > 0) {
-        setFilters(prev => ({ ...prev, dateFilter: 'today' }));
-      } else if (recent3DaysVideos.length > 0) {
-        setFilters(prev => ({ ...prev, dateFilter: 'recent3days' }));
-      } else {
-        setFilters(prev => ({ ...prev, dateFilter: 'all' }));
-      }
+      setFilters(prev => ({ ...prev, dateFilter: '24hours' }));
     }
-  }, [videos.length, within24hVideos.length, todayVideos.length, recent3DaysVideos.length, userManuallySelectedDate]);
+  }, [userManuallySelectedDate]);
 
   const summarizedCount = useMemo(() => videos.filter(v => v.isSummarized).length, [videos]);
   const activeChannelsCount = useMemo(() => channels.filter(c => c.isActive).length, [channels]);
@@ -203,69 +186,55 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return tokens.every(token => searchableText.includes(token));
   };
 
-  // Filtered Videos - When user searches, prioritize showing matches from all time by default
+  // Filtered Videos - Strictly restricted to videos within 24 hours from current time
   const filteredVideos = useMemo(() => {
     const now = Date.now();
     const isSearching = !!filters.searchQuery.trim();
 
     return videos.filter(video => {
-      // Category filter
+      // 1. Mandatory 24-Hour Strict Check (Purge & hide 8-day-old or older videos completely)
+      const timeStatus = calculateVideoTimeStatus(video.publishedAt, now);
+      // If older than 24 hours, strictly reject unless bookmarked by user
+      if (timeStatus.diffHours > 24.0 && filters.statusFilter !== 'bookmarked') {
+        return false;
+      }
+
+      // 2. Category filter
       if (filters.category !== 'ALL' && video.category !== filters.category) {
         return false;
       }
 
-      // Channel filter
+      // 3. Channel filter
       if (filters.channelId !== 'ALL' && video.channelId !== filters.channelId) {
         return false;
       }
 
-      // Status filter
+      // 4. Status filter
       if (filters.statusFilter === 'summarized' && !video.isSummarized) return false;
       if (filters.statusFilter === 'unsummarized' && video.isSummarized) return false;
       if (filters.statusFilter === 'bookmarked' && !video.isBookmarked) return false;
 
-      // Search Query Matching
+      // 5. Search Query Matching (Strictly within 24 hours)
       if (isSearching) {
         if (!matchSearchQuery(video, filters.searchQuery)) {
           return false;
         }
-        // When searching and user chose 'filtered' scope, apply date filter too
-        if (searchScope === 'filtered') {
-          const timeStatus = calculateVideoTimeStatus(video.publishedAt, now);
-          const isWithin24 = timeStatus.isWithin24h || video.isWithin24h;
-          const isTod = timeStatus.isToday || video.isToday;
-          const isYest = timeStatus.isYesterday || video.isYesterday;
-
-          if (filters.dateFilter === 'today' && !isTod) return false;
-          if (filters.dateFilter === '24hours' && !isWithin24) return false;
-          if (filters.dateFilter === 'yesterday' && !isYest) return false;
-          if (filters.dateFilter === 'recent3days' && timeStatus.diffHours > 72.0) return false;
-          if (filters.dateFilter === 'recent7days' && timeStatus.diffHours > 168.0) return false;
-        }
         return true;
       }
 
-      // Date filter with dynamic status check (When not searching)
-      const timeStatus = calculateVideoTimeStatus(video.publishedAt, now);
-      const isWithin24 = timeStatus.isWithin24h || video.isWithin24h;
-      const isTod = timeStatus.isToday || video.isToday;
-      const isYest = timeStatus.isYesterday || video.isYesterday;
+      // 6. Date sub-filter within 24h
+      const isWithin24 = (timeStatus.isWithin24h || video.isWithin24h) && timeStatus.diffHours <= 24.0;
+      const isTod = (timeStatus.isToday || video.isToday) && timeStatus.diffHours <= 24.0;
 
       if (filters.dateFilter === 'today') {
         if (!isTod) return false;
       } else if (filters.dateFilter === '24hours') {
         if (!isWithin24) return false;
-      } else if (filters.dateFilter === 'yesterday') {
-        if (!isYest) return false;
-      } else if (filters.dateFilter === 'recent3days') {
-        if (timeStatus.diffHours > 72.0) return false;
-      } else if (filters.dateFilter === 'recent7days') {
-        if (timeStatus.diffHours > 168.0) return false;
       }
 
       return true;
     });
-  }, [videos, filters, searchScope]);
+  }, [videos, filters]);
 
   // Check how many videos in ALL collection match search query (ignoring date filter)
   const allTimeSearchMatchesCount = useMemo(() => {
@@ -532,8 +501,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       )}
 
-      {/* 2.4 Live Sync Prompt Banner (When today/24h count is 0) */}
-      {todayVideos.length === 0 && within24hVideos.length === 0 && videos.length > 0 && (
+      {/* 2.4 Live Sync Prompt Banner (When 24h count is 0 or outdated videos exist) */}
+      {within24hVideos.length === 0 && (
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
@@ -541,11 +510,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
             <div>
               <div className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-2">
-                <span>현재 화면에 이전 수집 영상({videos.length}개)이 표시 중입니다</span>
-                <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-[11px] font-semibold">실시간 동기화 필요</span>
+                <span>⚡ 현시간 기준 최근 24시간 이내 최신 영상 수집</span>
+                <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-[11px] font-semibold">24시간 모니터링</span>
               </div>
               <p className="text-xs text-slate-600 mt-0.5">
-                등록된 {channels.length}개 채널의 오늘(당일) 및 최근 24시간 실시간 최신 영상을 즉시 수집합니다.
+                등록된 {channels.length}개 유튜브 채널에서 지난 24시간 동안 업로드된 실시간 최신 영상을 즉시 수집하고 AI 요약을 수행합니다.
               </p>
             </div>
           </div>
@@ -555,14 +524,29 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-xs sm:text-sm rounded-lg transition-all shadow-2xs flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isProcessing ? 'animate-spin' : ''}`} />
-            <span>{isProcessing ? '실시간 영상 수집 중...' : '⚡ 실시간 최신 영상 수집하기'}</span>
+            <span>{isProcessing ? '실시간 영상 수집 중...' : '⚡ 24시간 최신 영상 즉시 수집'}</span>
           </button>
         </div>
       )}
 
-      {/* 2.5 Quick Date Filter Segment */}
+      {/* 2.5 Quick Date Filter Segment - Strict 24H Scope */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-        <span className="text-xs font-semibold text-slate-500 shrink-0 mr-1">기간 필터:</span>
+        <span className="text-xs font-semibold text-slate-500 shrink-0 mr-1">기간 범위:</span>
+        <button
+          onClick={() => {
+            setUserManuallySelectedDate(true);
+            setFilters(prev => ({ ...prev, dateFilter: '24hours' }));
+          }}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+            filters.dateFilter === '24hours'
+              ? 'bg-slate-900 text-white shadow-2xs'
+              : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/90'
+          }`}
+        >
+          <Tv2 className="w-3 h-3 text-amber-400" />
+          ⚡ 최근 24시간 업로드 ({within24hVideos.length})
+        </button>
+
         <button
           onClick={() => {
             setUserManuallySelectedDate(true);
@@ -578,64 +562,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           오늘(당일) 업로드 ({todayVideos.length})
         </button>
 
-        <button
-          onClick={() => {
-            setUserManuallySelectedDate(true);
-            setFilters(prev => ({ ...prev, dateFilter: '24hours' }));
-          }}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-            filters.dateFilter === '24hours'
-              ? 'bg-slate-900 text-white shadow-2xs'
-              : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/90'
-          }`}
-        >
-          <Tv2 className="w-3 h-3" />
-          최근 24시간 ({within24hVideos.length})
-        </button>
-
-        <button
-          onClick={() => {
-            setUserManuallySelectedDate(true);
-            setFilters(prev => ({ ...prev, dateFilter: 'yesterday' }));
-          }}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-            filters.dateFilter === 'yesterday'
-              ? 'bg-slate-900 text-white shadow-2xs'
-              : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/90'
-          }`}
-        >
-          <Clock className="w-3 h-3" />
-          전일(어제) ({yesterdayVideos.length})
-        </button>
-
-        <button
-          onClick={() => {
-            setUserManuallySelectedDate(true);
-            setFilters(prev => ({ ...prev, dateFilter: 'recent3days' }));
-          }}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-            filters.dateFilter === 'recent3days'
-              ? 'bg-slate-900 text-white shadow-2xs'
-              : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/90'
-          }`}
-        >
-          <Calendar className="w-3 h-3" />
-          최근 3일 ({recent3DaysVideos.length})
-        </button>
-
-        <button
-          onClick={() => {
-            setUserManuallySelectedDate(true);
-            setFilters(prev => ({ ...prev, dateFilter: 'all' }));
-          }}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-            filters.dateFilter === 'all'
-              ? 'bg-slate-900 text-white shadow-2xs'
-              : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/90'
-          }`}
-        >
-          전체 수집 영상 ({videos.length})
-        </button>
+        <span className="text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200/80 px-2.5 py-1 rounded-md ml-auto hidden sm:inline-flex items-center gap-1 shrink-0">
+          <span>🕒</span>
+          <span>현시간 기준 24시간 이내 업로드 영상만 표시 및 검색</span>
+        </span>
       </div>
 
       {/* 3. Category Filter Pills */}

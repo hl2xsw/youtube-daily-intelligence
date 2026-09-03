@@ -259,34 +259,34 @@ export function loadVideos(): YouTubeVideo[] {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
       const nowEpoch = Date.now();
-      // Keep real YouTube videos within 30 days (720 hours) and calculate fresh time status
+      // Strictly retain only real YouTube videos within 24 hours (purge 8-day-old or older videos)
       const validOnly = parsed
         .filter(v => {
           if (!v || typeof v.videoId !== 'string') return false;
-          // Discard mock items without real videoId
+          // Discard mock items
           if (v.videoId.includes('mock_') || v.videoId.startsWith('mock-')) return false;
           if (v.id?.startsWith('mock-')) return false;
           
           const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
-          if (isNaN(pubTime) || pubTime === 0) return true;
+          if (isNaN(pubTime) || pubTime === 0) return false;
           const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
-          // Allow future timestamps due to clock drift or live premiere scheduling, retain up to 30 days
-          return diffHours <= 720.0;
+          
+          // Keep strictly within 24 hours (allow future timestamps up to +2h due to timezone/clock drift)
+          return diffHours >= -2.0 && diffHours <= 24.0;
         })
         .map(v => {
           const timeStatus = calculateVideoTimeStatus(v.publishedAt || v.createdAt || new Date().toISOString(), nowEpoch);
           return {
             ...v,
-            isWithin24h: timeStatus.isWithin24h,
+            isWithin24h: true,
             isToday: timeStatus.isToday,
             isYesterday: timeStatus.isYesterday,
             relativeTimeText: timeStatus.relativeTimeText || v.relativeTimeText
           };
         });
 
-      if (validOnly.length !== parsed.length) {
-        saveVideos(validOnly);
-      }
+      // Always overwrite storage with purged clean list
+      saveVideos(validOnly);
       return validOnly;
     }
     return [];
@@ -299,14 +299,14 @@ export function loadVideos(): YouTubeVideo[] {
 export function saveVideos(videos: YouTubeVideo[]): void {
   try {
     const nowEpoch = Date.now();
-    // Retain up to 30 days to allow comprehensive date filtering (today, 24h, yesterday, recent 3/7/30 days)
-    const filtered = videos.filter(v => {
+    // Strictly retain only videos within 24 hours (purge any older video like 8 days ago)
+    const filtered = (videos || []).filter(v => {
       if (!v || typeof v.videoId !== 'string') return false;
       if (v.videoId.includes('mock_') || v.videoId.startsWith('mock-') || v.id?.startsWith('mock-')) return false;
       const pubTime = new Date(v.publishedAt || v.createdAt || 0).getTime();
-      if (isNaN(pubTime) || pubTime === 0) return true;
+      if (isNaN(pubTime) || pubTime === 0) return false;
       const diffHours = (nowEpoch - pubTime) / (1000 * 60 * 60);
-      return diffHours <= 720.0;
+      return diffHours >= -2.0 && diffHours <= 24.0;
     });
     localStorage.setItem(VIDEOS_KEY, JSON.stringify(filtered));
   } catch (e) {

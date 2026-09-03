@@ -62,8 +62,8 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
   const safeInitialQuery = typeof initialQuery === 'string' ? initialQuery : '';
   const [query, setQuery] = useState(safeInitialQuery);
   const [searchEngine, setSearchEngine] = useState<'google' | 'youtube' | 'channels'>('google');
-  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
-  const [sortBy, setSortBy] = useState<'relevance' | 'date' | 'viewCount'>('relevance');
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('today'); // Strictly default to 24 hours / today
+  const [sortBy, setSortBy] = useState<'relevance' | 'date' | 'viewCount'>('date'); // Default to latest upload date
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<YouTubeVideoSearchResult[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
@@ -394,6 +394,18 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
               <span className="text-[11px] font-semibold text-slate-500 mr-1">업로드 기간:</span>
               <button
                 type="button"
+                onClick={() => handleFilterChange('today')}
+                className={`px-2.5 py-1 text-xs rounded font-bold transition-colors flex items-center gap-1 shadow-2xs ${
+                  dateFilter === 'today'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-300'
+                }`}
+              >
+                <Flame className="w-3 h-3 text-amber-400" />
+                ⚡ 최근 24시간 / 오늘 (권장)
+              </button>
+              <button
+                type="button"
                 onClick={() => handleFilterChange('all')}
                 className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
                   dateFilter === 'all'
@@ -401,19 +413,7 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
                     : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                 }`}
               >
-                전체
-              </button>
-              <button
-                type="button"
-                onClick={() => handleFilterChange('today')}
-                className={`px-2.5 py-1 text-xs rounded font-medium transition-colors flex items-center gap-1 ${
-                  dateFilter === 'today'
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                }`}
-              >
-                <Flame className="w-3 h-3 text-amber-400" />
-                오늘(당일)
+                전체 기간
               </button>
               <button
                 type="button"
