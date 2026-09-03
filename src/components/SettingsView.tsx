@@ -31,9 +31,25 @@ import {
   Eye,
   CheckSquare,
   Square,
-  ListFilter
+  ListFilter,
+  Youtube
 } from 'lucide-react';
 import { useToast } from './Toast';
+
+const POPULAR_SEARCH_KEYWORDS = [
+  '슈카월드',
+  '삼프로TV',
+  '경읽남',
+  '조코딩',
+  '잇섭',
+  '안될과학',
+  '티타임즈TV',
+  'SBS 뉴스',
+  '월급쟁이부자들',
+  '김작가TV',
+  '노마드코더',
+  '사물궁이'
+];
 
 interface SettingsViewProps {
   channels: YouTubeChannel[];
@@ -172,7 +188,38 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       if (results.length === 0) {
         showToast(`'${query}'에 대한 검색 결과가 없습니다.`, 'info');
       } else {
-        showToast(`'${query}' 관련 유튜브 채널 ${results.length}건을 검색했습니다.`, 'success');
+        const exact = results.find(r => r.isExactMatch);
+        if (exact) {
+          showToast(`'${exact.title}' 일치 채널을 찾았습니다. [채널 확인] 후 추가하세요.`, 'success');
+        } else {
+          showToast(`'${query}' 관련 유튜브 채널 ${results.length}건을 검색했습니다.`, 'success');
+        }
+      }
+    } catch (err: any) {
+      showToast('채널 검색 중 오류가 발생했습니다. 다시 시도해주세요.', 'error');
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // 1-1. Search by Quick Keyword Click
+  const handleSearchWithKeyword = async (keyword: string) => {
+    setSearchQuery(keyword);
+    setIsSearching(true);
+    setHasSearched(true);
+    try {
+      const results = await searchYouTubeChannels(keyword);
+      setSearchResults(results);
+      if (results.length === 0) {
+        showToast(`'${keyword}'에 대한 검색 결과가 없습니다.`, 'info');
+      } else {
+        const exact = results.find(r => r.isExactMatch);
+        if (exact) {
+          showToast(`'${exact.title}' 채널을 찾았습니다. [채널 확인] 후 추가하세요.`, 'success');
+        } else {
+          showToast(`'${keyword}' 관련 유튜브 채널 ${results.length}건을 찾았습니다.`, 'success');
+        }
       }
     } catch (err: any) {
       showToast('채널 검색 중 오류가 발생했습니다. 다시 시도해주세요.', 'error');
@@ -334,44 +381,64 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {/* Standard Search Bar */}
         {!showDirectAdd ? (
-          <form onSubmit={handleSearchChannels} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="채널명, @핸들, 검색어 입력 (예: TTimesTV, @shukaworld, 경읽남, SBS 뉴스, 조코딩...)"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-8 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400 transition-all text-slate-900"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchQuery('');
-                    setSearchResults([]);
-                    setHasSearched(false);
-                  }}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
+          <div className="space-y-3">
+            <form onSubmit={handleSearchChannels} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="채널명 또는 키워드 입력 (예: 슈카월드, 삼프로TV, 경읽남, 조코딩, 잇섭, SBS 뉴스, 안될과학...)"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-8 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400 transition-all text-slate-900"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSearchResults([]);
+                      setHasSearched(false);
+                    }}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
 
-            <button
-              type="submit"
-              disabled={isSearching || !searchQuery.trim()}
-              className="py-2 px-4 bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white font-semibold text-xs sm:text-sm rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 shrink-0 h-[38px]"
-            >
-              {isSearching ? (
-                <RefreshCw className="w-4 h-4 animate-spin" />
-              ) : (
-                <Search className="w-4 h-4" />
-              )}
-              <span>{isSearching ? '검색 중...' : '채널 검색'}</span>
-            </button>
-          </form>
+              <button
+                type="submit"
+                disabled={isSearching || !searchQuery.trim()}
+                className="py-2 px-4 bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white font-semibold text-xs sm:text-sm rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 shrink-0 h-[38px] cursor-pointer"
+              >
+                {isSearching ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Search className="w-4 h-4" />
+                )}
+                <span>{isSearching ? '검색 중...' : '채널 검색'}</span>
+              </button>
+            </form>
+
+            {/* Quick Popular Keywords Tags */}
+            <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+              <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1 shrink-0 mr-1">
+                <Sparkles className="w-3 h-3 text-amber-500" />
+                추천 검색어:
+              </span>
+              {POPULAR_SEARCH_KEYWORDS.map((kw) => (
+                <button
+                  key={kw}
+                  type="button"
+                  onClick={() => handleSearchWithKeyword(kw)}
+                  className="px-2 py-0.5 text-[11px] font-medium rounded-md bg-slate-100 hover:bg-red-50 hover:text-red-700 text-slate-600 border border-slate-200/80 hover:border-red-200 transition-colors cursor-pointer"
+                >
+                  #{kw}
+                </button>
+              ))}
+            </div>
+          </div>
         ) : (
           /* Direct URL / Handle Manual Add Form */
           <form onSubmit={handleDirectAdd} className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 space-y-3">
@@ -416,7 +483,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {/* Search Results Display Area */}
         {hasSearched && (
-          <div className="pt-3 border-t border-slate-100 space-y-3">
+          <div className="pt-3 border-t border-slate-100 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-3">
               <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
@@ -431,7 +498,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   setSearchResults([]);
                   setHasSearched(false);
                 }}
-                className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1 self-end sm:self-auto"
+                className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1 self-end sm:self-auto cursor-pointer"
               >
                 <X className="w-3 h-3" />
                 <span>검색 결과 닫기</span>
@@ -439,130 +506,321 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             {searchResults.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                {searchResults.map((result) => {
-                  const isAlreadyAdded = isChannelAlreadyRegistered(result);
-                  const channelCategory = channelCategoryOverrides[result.channelId] || result.category || selectedDefaultCategory;
-                  const channelUrl = getYouTubeChannelUrl(result);
+              <div className="space-y-4">
+                {/* 1. Exact / High-Relevance Matching Hero Card */}
+                {(() => {
+                  const exactMatch = searchResults.find(r => r.isExactMatch) || searchResults[0];
+                  if (!exactMatch) return null;
+
+                  const isAlreadyAdded = isChannelAlreadyRegistered(exactMatch);
+                  const channelCategory = channelCategoryOverrides[exactMatch.channelId] || exactMatch.category || selectedDefaultCategory;
+                  const channelUrl = getYouTubeChannelUrl(exactMatch);
 
                   return (
-                    <div 
-                      key={result.channelId}
-                      className="p-3 rounded-lg border border-slate-200 bg-white hover:border-slate-300 transition-all flex flex-col justify-between gap-2.5 shadow-2xs"
-                    >
-                      <div className="flex items-start gap-3">
-                        <a
-                          href={channelUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="relative group/avatar shrink-0 block"
-                          title={`'${result.title}' 유튜브 채널로 이동하여 확인`}
-                        >
-                          <img
-                            src={result.thumbnailUrl}
-                            alt={result.title}
-                            referrerPolicy="no-referrer"
-                            className="w-10 h-10 rounded-full object-cover border border-slate-200 group-hover/avatar:ring-2 group-hover/avatar:ring-red-500 transition-all"
-                            onError={(e) => {
-                              (e.target as HTMLElement).style.display = 'none';
-                            }}
-                          />
-                          <div className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover/avatar:opacity-100 flex items-center justify-center text-white transition-opacity">
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </div>
-                        </a>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <a
-                              href={channelUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs sm:text-sm font-bold text-slate-900 hover:text-red-600 truncate flex items-center gap-1 group/title transition-colors"
-                              title={`'${result.title}' 유튜브 채널 새 탭에서 열어 확인`}
-                            >
-                              <span className="truncate">{result.title}</span>
-                              <ExternalLink className="w-3 h-3 text-slate-400 group-hover/title:text-red-500 transition-colors shrink-0" />
-                            </a>
-                            <span className="text-[11px] text-slate-500 font-mono">
-                              {result.handle}
-                            </span>
-                            {result.subscriberCount && (
-                              <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded text-[10px] font-medium">
-                                {result.subscriberCount}
-                              </span>
-                            )}
-                          </div>
-                          {result.description && (
-                            <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">
-                              {result.description}
-                            </p>
-                          )}
+                    <div className="p-4 rounded-xl border-2 border-red-200/90 bg-gradient-to-r from-red-50/40 via-white to-amber-50/20 shadow-xs space-y-3">
+                      <div className="flex items-center justify-between gap-2 border-b border-red-100/70 pb-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="flex h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                          <span className="text-xs font-bold text-red-950">
+                            {exactMatch.isExactMatch ? '🎯 찾으시는 동일 채널이 맞나요?' : '⭐ 대표 추천 채널'}
+                          </span>
+                          <span className="px-2 py-0.5 text-[10px] font-semibold rounded bg-red-100 text-red-700">
+                            {exactMatch.matchReason || '채널명 일치'}
+                          </span>
                         </div>
+                        <span className="text-[11px] text-slate-500 hidden sm:inline">
+                          채널을 확인한 후 안전하게 추가하세요
+                        </span>
                       </div>
 
-                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
-                        <div className="flex items-center gap-1 text-xs">
-                          <span className="text-slate-500 text-[11px]">분류:</span>
-                          <select
-                            value={channelCategory}
-                            onChange={(e) => {
-                              setChannelCategoryOverrides(prev => ({
-                                ...prev,
-                                [result.channelId]: e.target.value as VideoCategory
-                              }));
-                            }}
-                            className="px-2 py-1 text-xs font-medium rounded-md border border-slate-200 bg-slate-50 text-slate-700 cursor-pointer focus:outline-none"
-                          >
-                            {categories.map(cat => (
-                              <option key={cat} value={cat}>{cat}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {/* 유튜브 채널 확인 버튼 */}
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div className="flex items-start gap-3.5 min-w-0">
                           <a
                             href={channelUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="px-2.5 py-1.5 text-xs font-semibold rounded-md border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 transition-colors flex items-center gap-1 shadow-2xs group/check"
-                            title={`'${result.title}' 유튜브 채널로 이동하여 확인`}
+                            className="relative group shrink-0 block"
+                            title={`'${exactMatch.title}' 유튜브 채널로 이동하여 확인`}
                           >
-                            <ExternalLink className="w-3.5 h-3.5 text-red-500 group-hover/check:translate-x-0.5 transition-transform" />
-                            <span>채널 확인</span>
+                            <img
+                              src={exactMatch.thumbnailUrl}
+                              alt={exactMatch.title}
+                              referrerPolicy="no-referrer"
+                              className="w-14 h-14 rounded-full object-cover border-2 border-red-200 group-hover:ring-2 group-hover:ring-red-500 transition-all shadow-xs"
+                              onError={(e) => {
+                                (e.target as HTMLElement).style.display = 'none';
+                              }}
+                            />
+                            <div className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity">
+                              <ExternalLink className="w-4 h-4" />
+                            </div>
                           </a>
 
-                          <button
-                            type="button"
-                            disabled={isAlreadyAdded}
-                            onClick={() => handleSelectChannelToAdd(result)}
-                            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1 ${
-                              isAlreadyAdded
-                                ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-default'
-                                : 'bg-slate-900 hover:bg-slate-800 text-white shadow-2xs'
-                            }`}
-                          >
-                            {isAlreadyAdded ? (
-                              <>
-                                <Check className="w-3.5 h-3.5" />
-                                <span>이미 추가됨</span>
-                              </>
-                            ) : (
-                              <>
-                                <Plus className="w-3.5 h-3.5" />
-                                <span>채널 추가하기</span>
-                              </>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <a
+                                href={channelUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm sm:text-base font-bold text-slate-900 hover:text-red-600 transition-colors flex items-center gap-1.5 group/link"
+                                title={`'${exactMatch.title}' 유튜브 채널 새 탭에서 열어 확인`}
+                              >
+                                <span>{exactMatch.title}</span>
+                                <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover/link:text-red-500 transition-colors" />
+                              </a>
+                              <span className="text-xs text-slate-500 font-mono">
+                                {exactMatch.handle}
+                              </span>
+                              {exactMatch.subscriberCount && (
+                                <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md text-[11px] font-semibold border border-slate-200/80">
+                                  구독자 {exactMatch.subscriberCount}
+                                </span>
+                              )}
+                              <span className="px-2 py-0.5 bg-amber-50 text-amber-800 rounded-md text-[11px] font-semibold border border-amber-200/70">
+                                {exactMatch.category || '기타'}
+                              </span>
+                            </div>
+
+                            {exactMatch.description && (
+                              <p className="text-xs text-slate-600 line-clamp-2 mt-1.5 leading-relaxed">
+                                {exactMatch.description}
+                              </p>
                             )}
-                          </button>
+                          </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 w-full sm:w-auto shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <span className="text-slate-500 text-[11px]">분류:</span>
+                            <select
+                              value={channelCategory}
+                              onChange={(e) => {
+                                setChannelCategoryOverrides(prev => ({
+                                  ...prev,
+                                  [exactMatch.channelId]: e.target.value as VideoCategory
+                                }));
+                              }}
+                              className="px-2.5 py-1 text-xs font-semibold rounded-md border border-slate-200 bg-white text-slate-800 cursor-pointer focus:outline-none shadow-2xs"
+                            >
+                              {categories.map(cat => (
+                                <option key={cat} value={cat}>{cat}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {/* 유튜브 채널 확인 버튼 */}
+                            <a
+                              href={channelUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3 py-1.5 text-xs font-bold rounded-lg border border-red-300 bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 transition-colors flex items-center gap-1.5 shadow-2xs group/btn"
+                              title={`'${exactMatch.title}' 유튜브 채널로 이동하여 확인`}
+                            >
+                              <Youtube className="w-4 h-4 text-red-600" />
+                              <span>채널 확인</span>
+                              <ExternalLink className="w-3 h-3 text-red-500 group-hover/btn:translate-x-0.5 transition-transform" />
+                            </a>
+
+                            <button
+                              type="button"
+                              disabled={isAlreadyAdded}
+                              onClick={() => handleSelectChannelToAdd(exactMatch)}
+                              className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer ${
+                                isAlreadyAdded
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default'
+                                  : 'bg-slate-900 hover:bg-slate-800 text-white'
+                              }`}
+                            >
+                              {isAlreadyAdded ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>이미 추가됨</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Plus className="w-3.5 h-3.5" />
+                                  <span>채널 추가하기</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
                   );
-                })}
+                })()}
+
+                {/* 2. Other Related Channels Section */}
+                {(() => {
+                  const exactMatch = searchResults.find(r => r.isExactMatch) || searchResults[0];
+                  const otherResults = searchResults.filter(r => r.channelId !== exactMatch?.channelId);
+
+                  if (otherResults.length === 0) return null;
+
+                  return (
+                    <div className="space-y-2.5 pt-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                          <span>🔍 관련 추천 채널 ({otherResults.length}개)</span>
+                        </span>
+                        <span className="text-[11px] text-slate-500 hidden sm:inline">
+                          버튼을 눌러 유튜브 채널을 확인하거나 내 목록에 추가할 수 있습니다.
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                        {otherResults.map((result) => {
+                          const isAlreadyAdded = isChannelAlreadyRegistered(result);
+                          const channelCategory = channelCategoryOverrides[result.channelId] || result.category || selectedDefaultCategory;
+                          const channelUrl = getYouTubeChannelUrl(result);
+
+                          return (
+                            <div 
+                              key={result.channelId}
+                              className="p-3 rounded-lg border border-slate-200 bg-white hover:border-slate-300 transition-all flex flex-col justify-between gap-2.5 shadow-2xs"
+                            >
+                              <div className="flex items-start gap-3">
+                                <a
+                                  href={channelUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="relative group/avatar shrink-0 block"
+                                  title={`'${result.title}' 유튜브 채널로 이동하여 확인`}
+                                >
+                                  <img
+                                    src={result.thumbnailUrl}
+                                    alt={result.title}
+                                    referrerPolicy="no-referrer"
+                                    className="w-10 h-10 rounded-full object-cover border border-slate-200 group-hover/avatar:ring-2 group-hover/avatar:ring-red-500 transition-all"
+                                    onError={(e) => {
+                                      (e.target as HTMLElement).style.display = 'none';
+                                    }}
+                                  />
+                                  <div className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover/avatar:opacity-100 flex items-center justify-center text-white transition-opacity">
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                  </div>
+                                </a>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <a
+                                      href={channelUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-xs sm:text-sm font-bold text-slate-900 hover:text-red-600 truncate flex items-center gap-1 group/title transition-colors"
+                                      title={`'${result.title}' 유튜브 채널 새 탭에서 열어 확인`}
+                                    >
+                                      <span className="truncate">{result.title}</span>
+                                      <ExternalLink className="w-3 h-3 text-slate-400 group-hover/title:text-red-500 transition-colors shrink-0" />
+                                    </a>
+                                    <span className="text-[11px] text-slate-500 font-mono">
+                                      {result.handle}
+                                    </span>
+                                    {result.subscriberCount && (
+                                      <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded text-[10px] font-medium">
+                                        {result.subscriberCount}
+                                      </span>
+                                    )}
+                                    {result.matchReason && (
+                                      <span className="px-1.5 py-0.2 bg-slate-50 text-slate-500 rounded text-[10px] border border-slate-200/60">
+                                        {result.matchReason}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {result.description && (
+                                    <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">
+                                      {result.description}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                                <div className="flex items-center gap-1 text-xs">
+                                  <span className="text-slate-500 text-[11px]">분류:</span>
+                                  <select
+                                    value={channelCategory}
+                                    onChange={(e) => {
+                                      setChannelCategoryOverrides(prev => ({
+                                        ...prev,
+                                        [result.channelId]: e.target.value as VideoCategory
+                                      }));
+                                    }}
+                                    className="px-2 py-1 text-xs font-medium rounded-md border border-slate-200 bg-slate-50 text-slate-700 cursor-pointer focus:outline-none"
+                                  >
+                                    {categories.map(cat => (
+                                      <option key={cat} value={cat}>{cat}</option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {/* 유튜브 채널 확인 버튼 */}
+                                  <a
+                                    href={channelUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-2.5 py-1.5 text-xs font-semibold rounded-md border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 transition-colors flex items-center gap-1 shadow-2xs group/check"
+                                    title={`'${result.title}' 유튜브 채널로 이동하여 확인`}
+                                  >
+                                    <Youtube className="w-3.5 h-3.5 text-red-600" />
+                                    <span>채널 확인</span>
+                                    <ExternalLink className="w-3 h-3 text-red-500 group-hover/check:translate-x-0.5 transition-transform" />
+                                  </a>
+
+                                  <button
+                                    type="button"
+                                    disabled={isAlreadyAdded}
+                                    onClick={() => handleSelectChannelToAdd(result)}
+                                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1 cursor-pointer ${
+                                      isAlreadyAdded
+                                        ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-default'
+                                        : 'bg-slate-900 hover:bg-slate-800 text-white shadow-2xs'
+                                    }`}
+                                  >
+                                    {isAlreadyAdded ? (
+                                      <>
+                                        <Check className="w-3.5 h-3.5" />
+                                        <span>이미 추가됨</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Plus className="w-3.5 h-3.5" />
+                                        <span>추가</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             ) : (
-              <div className="p-6 text-center text-xs text-slate-500 bg-slate-50 rounded-lg border border-slate-200">
-                일치하는 유튜브 채널을 찾을 수 없습니다. 철자를 확인하거나 @핸들을 입력해보세요.
+              <div className="p-8 text-center bg-slate-50 rounded-lg border border-dashed border-slate-200 space-y-2">
+                <Search className="w-6 h-6 text-slate-400 mx-auto" />
+                <p className="text-xs font-semibold text-slate-700">
+                  '{searchQuery}'에 일치하는 채널을 찾을 수 없습니다.
+                </p>
+                <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
+                  채널의 공식 @핸들(예: @shukaworld) 또는 URL을 입력하거나 상단의 직접 입력 모드를 사용해보세요.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDirectInput(searchQuery);
+                    setShowDirectAdd(true);
+                  }}
+                  className="mt-2 px-3 py-1 text-xs font-medium rounded-md bg-white border border-slate-200 hover:border-slate-300 text-slate-800 shadow-2xs inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>'{searchQuery}' 직접 입력 모드로 추가</span>
+                </button>
               </div>
             )}
           </div>

@@ -379,6 +379,9 @@ export interface YouTubeChannelSearchResult {
   thumbnailUrl: string;
   subscriberCount: string;
   category: string;
+  isExactMatch?: boolean;
+  matchReason?: string;
+  matchScore?: number;
 }
 
 // Client-side HTML Search Parser for direct YouTube scraping via CORS proxy
@@ -774,27 +777,64 @@ export async function searchYouTubeChannels(query: string): Promise<YouTubeChann
 
   // 2. Client-Side Known Channels Catalog Search
   const normalizedQuery = cleanQuery.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
-  const matched = ALL_KNOWN_CHANNELS.filter(item => {
+  const scoredResults: YouTubeChannelSearchResult[] = [];
+
+  for (const item of ALL_KNOWN_CHANNELS) {
     const titleNorm = item.title.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
     const handleNorm = item.handle.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
     const descNorm = (item.description || '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
     const catNorm = (item.category || '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
 
-    return titleNorm.includes(normalizedQuery) || normalizedQuery.includes(titleNorm) ||
-           handleNorm.includes(normalizedQuery) || normalizedQuery.includes(handleNorm) ||
-           descNorm.includes(normalizedQuery) || catNorm.includes(normalizedQuery);
-  });
+    let score = 0;
+    let matchReason = '';
+    let isExactMatch = false;
 
-  if (matched.length > 0) {
-    return matched.map(ch => ({
-      channelId: ch.channelId,
-      title: ch.title,
-      handle: ch.handle,
-      description: ch.description || `${ch.title} 공식 유튜브 채널`,
-      thumbnailUrl: ch.thumbnailUrl,
-      subscriberCount: ch.subscriberCount || '구독자 정보',
-      category: ch.category || '기타'
-    }));
+    if (titleNorm === normalizedQuery) {
+      score = 1000;
+      isExactMatch = true;
+      matchReason = '채널명 정확 일치';
+    } else if (handleNorm === normalizedQuery || `@${handleNorm}` === `@${normalizedQuery}`) {
+      score = 900;
+      isExactMatch = true;
+      matchReason = '핸들(@) 일치';
+    } else if (titleNorm.startsWith(normalizedQuery)) {
+      score = 600;
+      isExactMatch = normalizedQuery.length >= 3 && titleNorm.length <= normalizedQuery.length + 2;
+      matchReason = '채널명 시작 일치';
+    } else if (titleNorm.includes(normalizedQuery) || normalizedQuery.includes(titleNorm)) {
+      score = 450;
+      matchReason = '채널명 포함';
+    } else if (handleNorm.includes(normalizedQuery) || normalizedQuery.includes(handleNorm)) {
+      score = 400;
+      matchReason = '핸들(@) 포함';
+    } else if (descNorm.includes(normalizedQuery)) {
+      score = 250;
+      matchReason = '채널 소개 키워드';
+    } else if (catNorm.includes(normalizedQuery)) {
+      score = 150;
+      matchReason = `${item.category} 카테고리`;
+    }
+
+    if (score > 0) {
+      scoredResults.push({
+        channelId: item.channelId,
+        title: item.title,
+        handle: item.handle,
+        description: item.description || `${item.title} 공식 유튜브 채널`,
+        thumbnailUrl: item.thumbnailUrl,
+        subscriberCount: item.subscriberCount || '구독자 정보',
+        category: item.category || '기타',
+        isExactMatch,
+        matchReason,
+        matchScore: score
+      });
+    }
+  }
+
+  if (scoredResults.length > 0) {
+    // Sort by match score descending
+    scoredResults.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+    return scoredResults.slice(0, 15);
   }
 
   // 3. Fallback: try single direct lookup
@@ -807,7 +847,9 @@ export async function searchYouTubeChannels(query: string): Promise<YouTubeChann
       description: single.description || `${single.title} 채널`,
       thumbnailUrl: single.thumbnailUrl,
       subscriberCount: single.subscriberCount || '구독자 정보 없음',
-      category: single.category
+      category: single.category,
+      isExactMatch: true,
+      matchReason: '직접 검색 채널'
     }];
   }
 

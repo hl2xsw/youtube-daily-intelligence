@@ -263,6 +263,136 @@ const KNOWN_CHANNELS_MAP: Array<{
     thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_mtn=s900-c-k-c0x00ffffff-no-rj',
     category: '경제/재테크',
     subscriberCount: '105만명'
+  },
+  {
+    keywords: ['itsub', '잇섭', '잇섭itsub', 'it기기', '스마트폰', '전자기기', '테크'],
+    channelId: 'UCdUcjkyZtf-1WJyPPiETF1g',
+    title: 'ITSub잇섭',
+    handle: '@itsub',
+    description: '대한민국 1등 테크 유튜버 ITSub잇섭의 솔직한 IT 제품 리뷰',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_itsub=s900-c-k-c0x00ffffff-no-rj',
+    category: 'IT/테크',
+    subscriberCount: '258만명'
+  },
+  {
+    keywords: ['theedit', '디에디트', '에디트', '사는재미', '테크리뷰', 'it'],
+    channelId: 'UCgB6d_YVfG9r0K8-e8xKxrw',
+    title: '디에디트 THE EDIT',
+    handle: '@theedit',
+    description: '사는 재미가 없으면 사는 재미라도! 감각적인 테크와 라이프스타일 리뷰',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_theedit=s900-c-k-c0x00ffffff-no-rj',
+    category: 'IT/테크',
+    subscriberCount: '52만명'
+  },
+  {
+    keywords: ['underkg', '언더케이지', 'f717', '스마트폰리뷰', '테크'],
+    channelId: 'UCgAekGv_S70fXW_9eFzXyTQ',
+    title: 'UNDERkg',
+    handle: '@underkg',
+    description: '구체적이고 빠르고 정확한 IT 모바일 디바이스 언박싱과 개봉기',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_underkg=s900-c-k-c0x00ffffff-no-rj',
+    category: 'IT/테크',
+    subscriberCount: '80만명'
+  },
+  {
+    keywords: ['nadocoding', '나도코딩', '파이썬', '코딩', '프로그래밍', '개발'],
+    channelId: 'UC7iAOLiALt2rtMvaBpt538w',
+    title: '나도코딩',
+    handle: '@nadocoding',
+    description: '누구나 쉽게 배울 수 있는 프로그래밍 강좌 및 실전 프로젝트',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_nadocoding=s900-c-k-c0x00ffffff-no-rj',
+    category: 'IT/테크',
+    subscriberCount: '42만명'
+  },
+  {
+    keywords: ['opentutorials', '생활코딩', '이고잉', '웹개발', '코딩', '프로그래밍'],
+    channelId: 'UCvc8kv-i5fvFTJBFAk6n1SA',
+    title: '생활코딩',
+    handle: '@opentutorials',
+    description: '일반인을 위한 소프트웨어 교육과 오픈튜토리얼스 커뮤니티',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_opentutorials=s900-c-k-c0x00ffffff-no-rj',
+    category: 'IT/테크',
+    subscriberCount: '55만명'
+  },
+  {
+    keywords: ['weolbu', '월급쟁이부자들', '월부', '너나위', '부동산', '재테크', '월급쟁이부자들tv'],
+    channelId: 'UC2bL_bJ-x5eJ1-a7_mP6QSw',
+    title: '월급쟁이부자들TV',
+    handle: '@weolbu',
+    description: '월급쟁이들의 내 집 마련과 행복한 노후 준비를 돕는 경제 재테크 채널',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_weolbu=s900-c-k-c0x00ffffff-no-rj',
+    category: '경제/재테크',
+    subscriberCount: '150만명'
+  },
+  {
+    keywords: ['kimwriter', '김작가tv', '김작가', '재테크', '인터뷰', '자기계발'],
+    channelId: 'UC39zVzR_Y4T4R4t7N5K6q7A',
+    title: '김작가 TV',
+    handle: '@kimwriter',
+    description: '각 분야 최고 전문가들에게 듣는 경제 인사이트와 성공의 비밀',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_kimwriter=s900-c-k-c0x00ffffff-no-rj',
+    category: '경제/재테크',
+    subscriberCount: '210만명'
+  },
+  {
+    keywords: ['sosumonkey', '소수몽키', '미국주식', '미주', '배당주', '주식투자'],
+    channelId: 'UCQ0L_B5j6Q3H4_3vM7H5j9A',
+    title: '소수몽키',
+    handle: '@sosumonkey',
+    description: '잠자는 동안에도 돈이 들어오는 미국주식 투자 가이드',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_sosumonkey=s900-c-k-c0x00ffffff-no-rj',
+    category: '경제/재테크',
+    subscriberCount: '78만명'
+  },
+  {
+    keywords: ['talent_invest', '달란트투자', '달란트', '주식', '투자', '이래학'],
+    channelId: 'UC1eF6jZ8n0xH4E9N_kG1LgA',
+    title: '달란트투자',
+    handle: '@talent_invest',
+    description: '데이터와 재무제표 기반의 현명한 주식 투자 인사이트',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_talent=s900-c-k-c0x00ffffff-no-rj',
+    category: '경제/재테크',
+    subscriberCount: '65만명'
+  },
+  {
+    keywords: ['buiknam', '부읽남', '부읽남tv', '부동산읽어주는남자', '정상혁'],
+    channelId: 'UCt5f3bA5R6lJ1N0kM8L0w8A',
+    title: '부읽남TV_내집마련부터건물주까지',
+    handle: '@buiknam',
+    description: '내집마련부터 건물주까지, 부동산과 자산관리의 모든 것',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_buiknam=s900-c-k-c0x00ffffff-no-rj',
+    category: '경제/재테크',
+    subscriberCount: '120만명'
+  },
+  {
+    keywords: ['samulgoongi', '사물궁이', '사물궁이잡학사전', '과학', '호기심', '잡학사전'],
+    channelId: 'UC1pU7jK8c0Q1N5W5P6g3_0w',
+    title: '사물궁이 잡학사전',
+    handle: '@samulgoongi',
+    description: '사소해서 물어보지 못했지만 궁금했던 이야기들을 알기 쉽게 풀어드립니다.',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_samul=s900-c-k-c0x00ffffff-no-rj',
+    category: '과학/지식',
+    subscriberCount: '160만명'
+  },
+  {
+    keywords: ['knowledgeinside', '지식인사이드', '지식', '인터뷰', '인문학', '뇌과학'],
+    channelId: 'UC6ZzM7C_Q5pY4q8w8e7Y5rg',
+    title: '지식인사이드',
+    handle: '@knowledgeinside',
+    description: '국내 석학과 최고 권위자들의 지혜와 삶의 통찰',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_knowledge=s900-c-k-c0x00ffffff-no-rj',
+    category: '과학/지식',
+    subscriberCount: '185만명'
+  },
+  {
+    keywords: ['chimchakman', '침착맨', '이말년', '침투부', '침착맨플러스'],
+    channelId: 'UCUj6rrhMTR9PIP27gTw9MQw',
+    title: '침착맨',
+    handle: '@chimchakman_official',
+    description: '이야기와 토크, 유쾌한 일상을 담아내는 침착맨 공식 채널',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_chim=s900-c-k-c0x00ffffff-no-rj',
+    category: '기타',
+    subscriberCount: '260만명'
   }
 ];
 
@@ -470,7 +600,7 @@ app.post('/api/youtube/search-channels', async (req, res) => {
       clean = decodeURIComponent(clean);
     } catch {}
 
-    const results: Array<{
+    interface ScoredChannel {
       channelId: string;
       title: string;
       handle: string;
@@ -478,18 +608,94 @@ app.post('/api/youtube/search-channels', async (req, res) => {
       thumbnailUrl: string;
       subscriberCount: string;
       category: string;
-    }> = [];
+      isExactMatch: boolean;
+      matchReason: string;
+      matchScore: number;
+    }
+
+    const results: ScoredChannel[] = [];
     const seenIds = new Set<string>();
 
-    // 1. Check known channels catalog for direct/keyword match
     const normalized = clean.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
-    for (const item of KNOWN_CHANNELS_MAP) {
-      const match = item.keywords.some(kw => {
-        const normKw = kw.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
-        return normKw === normalized || normKw.includes(normalized) || normalized.includes(normKw);
-      }) || item.title.toLowerCase().includes(normalized) || item.handle.toLowerCase().includes(normalized);
 
-      if (match && !seenIds.has(item.channelId)) {
+    // 1. If query looks like a handle, URL, or channel ID, try direct resolve first
+    if (clean.startsWith('@') || clean.startsWith('http') || /^UC[a-zA-Z0-9_-]{22}$/.test(clean)) {
+      try {
+        const direct = await resolveChannelInfo(clean);
+        if (direct && direct.channelId && !seenIds.has(direct.channelId)) {
+          seenIds.add(direct.channelId);
+          results.push({
+            ...direct,
+            isExactMatch: true,
+            matchReason: '직접 입력 일치',
+            matchScore: 1200
+          });
+        }
+      } catch {
+        // continue
+      }
+    }
+
+    // 2. Check curated known channels catalog for direct/keyword match with scoring
+    for (const item of KNOWN_CHANNELS_MAP) {
+      if (seenIds.has(item.channelId)) continue;
+
+      const titleNorm = item.title.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+      const handleNorm = item.handle.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+      const descNorm = (item.description || '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+      const catNorm = (item.category || '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+
+      let score = 0;
+      let matchReason = '';
+      let isExact = false;
+
+      // Exact channel title match
+      if (titleNorm === normalized) {
+        score = 1000;
+        isExact = true;
+        matchReason = '채널명 정확 일치';
+      } 
+      // Handle exact match
+      else if (handleNorm === normalized || `@${handleNorm}` === `@${normalized}`) {
+        score = 950;
+        isExact = true;
+        matchReason = '핸들(@) 일치';
+      } 
+      // Keyword exact match
+      else if (item.keywords.some(kw => kw.toLowerCase().replace(/[^a-z0-9가-힣]/g, '') === normalized)) {
+        score = 900;
+        isExact = true;
+        matchReason = '대표 키워드 일치';
+      } 
+      // Title prefix match
+      else if (titleNorm.startsWith(normalized)) {
+        score = 700;
+        isExact = normalized.length >= 3 && titleNorm.length <= normalized.length + 3;
+        matchReason = '채널명 시작 일치';
+      } 
+      // Title substring or query substring
+      else if (titleNorm.includes(normalized) || (normalized.length >= 2 && normalized.includes(titleNorm))) {
+        score = 550;
+        matchReason = '채널명 포함';
+      } 
+      // Keywords substring match
+      else if (item.keywords.some(kw => {
+        const kwNorm = kw.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+        return kwNorm.includes(normalized) || (normalized.length >= 2 && normalized.includes(kwNorm));
+      })) {
+        score = 450;
+        matchReason = '관련 키워드 매칭';
+      } 
+      // Description or category match
+      else if (descNorm.includes(normalized)) {
+        score = 250;
+        matchReason = '채널 소개 키워드';
+      } else if (catNorm.includes(normalized)) {
+        score = 150;
+        matchReason = `${item.category} 카테고리`;
+      }
+
+      if (score > 0) {
         seenIds.add(item.channelId);
         results.push({
           channelId: item.channelId,
@@ -498,26 +704,18 @@ app.post('/api/youtube/search-channels', async (req, res) => {
           description: item.description,
           thumbnailUrl: item.thumbnailUrl,
           subscriberCount: item.subscriberCount,
-          category: item.category
+          category: item.category,
+          isExactMatch: isExact,
+          matchReason: matchReason || '추천 채널',
+          matchScore: score
         });
       }
     }
 
-    // 2. If query looks like a handle, URL, or channel ID, try direct resolve first
-    if (clean.startsWith('@') || clean.startsWith('http') || /^UC[a-zA-Z0-9_-]{22}$/.test(clean)) {
-      try {
-        const direct = await resolveChannelInfo(clean);
-        if (direct && direct.channelId && !seenIds.has(direct.channelId)) {
-          seenIds.add(direct.channelId);
-          results.unshift(direct);
-        }
-      } catch {
-        // continue
-      }
-    }
-
-    // 3. YouTube search with channel filter via Innertube (Primary) and Scraping (Fallback)
+    // 3. YouTube Search with Channel Filter via Innertube (Primary) and Scraping (Fallback)
     try {
+      let channelData: any = null;
+
       // Tier 1: Innertube Channel Search
       const innertubeRes = await fetch('https://www.youtube.com/youtubei/v1/search', {
         method: 'POST',
@@ -534,7 +732,6 @@ app.post('/api/youtube/search-channels', async (req, res) => {
         })
       });
 
-      let channelData: any = null;
       if (innertubeRes.ok) {
         try {
           channelData = await innertubeRes.json();
@@ -598,14 +795,21 @@ app.post('/api/youtube/search-channels', async (req, res) => {
                 category = '자기계발/교육';
               }
 
+              const crTitleNorm = title.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+              const isExact = crTitleNorm === normalized || handle.toLowerCase().replace(/[^a-z0-9가-힣]/g, '') === normalized;
+              let score = isExact ? 980 : (crTitleNorm.includes(normalized) ? 600 : 350);
+
               results.push({
                 channelId,
                 title: title || clean,
                 handle: handle || `@${title.replace(/\s+/g, '').toLowerCase()}`,
                 subscriberCount,
-                description: description || `${title} 채널`,
+                description: description || `${title} 유튜브 채널`,
                 thumbnailUrl: thumb || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
-                category
+                category,
+                isExactMatch: isExact,
+                matchReason: isExact ? '유튜브 공식 채널 일치' : '유튜브 검색 채널',
+                matchScore: score
               });
             }
           }
@@ -619,7 +823,66 @@ app.post('/api/youtube/search-channels', async (req, res) => {
       console.warn('YouTube channel search error:', searchErr);
     }
 
-    res.json({ success: true, channels: results.slice(0, 15) });
+    // 4. Tier 3 Creator Aggregation (If results are few, extract top creators from general YouTube video search)
+    if (results.length < 6) {
+      try {
+        const vidSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(clean)}`;
+        const vidSearchRes = await fetch(vidSearchUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
+          }
+        });
+        if (vidSearchRes.ok) {
+          const html = await vidSearchRes.text();
+          const match = html.match(/var ytInitialData = ({.*?});<\/script>/s) || html.match(/ytInitialData\s*=\s*({.+?});/s);
+          if (match) {
+            const vidData = JSON.parse(match[1]);
+            const traverseVideos = (node: any) => {
+              if (!node || typeof node !== 'object') return;
+              if (node.videoRenderer) {
+                const vr = node.videoRenderer;
+                const chTitle = vr.ownerText?.runs?.[0]?.text || vr.shortBylineText?.runs?.[0]?.text;
+                const chBrowseId = vr.ownerText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId ||
+                                   vr.shortBylineText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId;
+                const chThumb = vr.channelThumbnailSupportedRenderers?.channelThumbnailWithLinkRenderer?.thumbnail?.thumbnails?.[0]?.url ||
+                                vr.channelThumbnail?.thumbnails?.[0]?.url;
+
+                if (chBrowseId && chTitle && !seenIds.has(chBrowseId)) {
+                  seenIds.add(chBrowseId);
+                  const chNorm = chTitle.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+                  const isExact = chNorm === normalized;
+
+                  results.push({
+                    channelId: chBrowseId,
+                    title: chTitle,
+                    handle: `@${chTitle.replace(/\s+/g, '').toLowerCase()}`,
+                    subscriberCount: '인기 크리에이터',
+                    description: `'${clean}' 관련 인기 영상을 게시하는 유튜브 채널`,
+                    thumbnailUrl: chThumb || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
+                    category: '기타',
+                    isExactMatch: isExact,
+                    matchReason: isExact ? '채널명 일치' : '관련 인기 채널',
+                    matchScore: isExact ? 950 : 300
+                  });
+                }
+              }
+              for (const k of Object.keys(node)) {
+                traverseVideos(node[k]);
+              }
+            };
+            traverseVideos(vidData);
+          }
+        }
+      } catch (tier3Err) {
+        // Continue
+      }
+    }
+
+    // 5. Final Sorting by Match Score Descending
+    results.sort((a, b) => b.matchScore - a.matchScore);
+
+    res.json({ success: true, channels: results.slice(0, 18) });
   } catch (error: any) {
     console.error('Channel search endpoint error:', error);
     res.status(500).json({ error: error.message || '채널 검색에 실패했습니다.' });
