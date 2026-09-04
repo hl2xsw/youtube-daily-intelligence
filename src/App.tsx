@@ -327,9 +327,10 @@ function AppContent() {
                 detailLevel: settings.summaryDetailLevel || 'standard'
               })
             });
-            if (res.ok) {
-              const data = await res.json();
-              if (data.success && data.summary) {
+            const ct = res.headers.get('content-type') || '';
+            if (res.ok && ct.includes('application/json')) {
+              const data = await res.json().catch(() => null);
+              if (data?.success && data.summary) {
                 return {
                   ...v,
                   isSummarized: true,
@@ -428,9 +429,10 @@ function AppContent() {
         })
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.summary) {
+      const ct = res.headers.get('content-type') || '';
+      if (res.ok && ct.includes('application/json')) {
+        const data = await res.json().catch(() => null);
+        if (data?.success && data.summary) {
           summaryData = data.summary;
           isAi = !!data.aiPowered;
           if (data.fullDescription) fetchedFullDesc = data.fullDescription;
@@ -504,16 +506,19 @@ function AppContent() {
           })
         });
 
-        const data = await res.json();
-        if (data.success && data.summary) {
-          const updated: YouTubeVideo = {
-            ...video,
-            isSummarized: true,
-            summary: data.summary,
-            category: (data.summary.category as VideoCategory) || video.category
-          };
-          currentVideos = currentVideos.map(v => v.id === video.id ? updated : v);
-          completed++;
+        const ct = res.headers.get('content-type') || '';
+        if (res.ok && ct.includes('application/json')) {
+          const data = await res.json().catch(() => null);
+          if (data?.success && data.summary) {
+            const updated: YouTubeVideo = {
+              ...video,
+              isSummarized: true,
+              summary: data.summary,
+              category: (data.summary.category as VideoCategory) || video.category
+            };
+            currentVideos = currentVideos.map(v => v.id === video.id ? updated : v);
+            completed++;
+          }
         }
       } catch (e) {
         console.error('Batch item fail:', e);
@@ -551,9 +556,10 @@ function AppContent() {
         })
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.report) {
+      const ct = res.headers.get('content-type') || '';
+      if (res.ok && ct.includes('application/json')) {
+        const data = await res.json().catch(() => null);
+        if (data?.success && data.report) {
           const newReports = [data.report, ...reports];
           updateReports(newReports);
           setActiveTab('analytics');
@@ -598,9 +604,10 @@ function AppContent() {
         })
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.video) {
+      const ct = res.headers.get('content-type') || '';
+      if (res.ok && ct.includes('application/json')) {
+        const data = await res.json().catch(() => null);
+        if (data?.success && data.video) {
           const newVid: YouTubeVideo = data.video;
           const existsIdx = videos.findIndex(v => v.videoId === newVid.videoId);
           let updated: YouTubeVideo[] = [];

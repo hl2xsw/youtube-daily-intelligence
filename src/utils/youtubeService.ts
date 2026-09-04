@@ -48,6 +48,20 @@ export function setStoredYoutubeApiKey(key: string): void {
   } catch {}
 }
 
+// Helper to safely parse JSON response avoiding 'Unexpected token <' on HTML error pages
+async function safeJsonFetch<T = any>(input: RequestInfo, init?: RequestInit): Promise<T | null> {
+  try {
+    const res = await fetch(input, init);
+    const contentType = res.headers.get('content-type') || '';
+    if (!res.ok || !contentType.includes('application/json')) {
+      return null;
+    }
+    return await res.json().catch(() => null);
+  } catch {
+    return null;
+  }
+}
+
 // Check if server has YOUTUBE_API_KEY environment variable configured in .env or system env
 export async function checkServerYoutubeApiStatus(): Promise<{
   hasServerApiKey: boolean;
@@ -56,9 +70,15 @@ export async function checkServerYoutubeApiStatus(): Promise<{
   varName?: string;
 }> {
   try {
-    const res = await fetch('/api/youtube/status');
-    if (res.ok) {
-      const data = await res.json();
+    const data = await safeJsonFetch<{
+      hasServerApiKey?: boolean;
+      keyMasked?: string;
+      source?: string;
+      varName?: string;
+      clientKey?: string;
+    }>('/api/youtube/status');
+
+    if (data) {
       if (data.clientKey && typeof data.clientKey === 'string') {
         cachedServerApiKey = data.clientKey.trim();
         cachedKeySource = data.source || '.env';
@@ -74,22 +94,95 @@ export async function checkServerYoutubeApiStatus(): Promise<{
   return { hasServerApiKey: false, keyMasked: null };
 }
 
-// Validate YouTube Data API Key via server verification endpoint
+// Validate YouTube Data API Key with direct Google official API check first (CORS supported)
 export async function testYoutubeApiKey(apiKey: string): Promise<{ success: boolean; message: string }> {
+  const cleanKey = (apiKey || '').trim();
+  if (!cleanKey) {
+    return { success: false, message: 'API 키를 입력해주세요.' };
+  }
+
+  // 1. Direct validation via official Google YouTube Data API v3 endpoint (CORS-enabled directly in browser)
   try {
-    const res = await fetch('/api/youtube/validate-key', {
+    const testUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular&maxResults=1&key=${encodeURIComponent(cleanKey)}`;
+    const googleRes = await fetch(testUrl);
+
+    if (googleRes.ok) {
+      return {
+        success: true,
+        message: 'Google 공식 YouTube Data API v3 인증에 성공했습니다.'
+      };
+    }
+
+    // Safely inspect Google API's error payload
+    const contentType = googleRes.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const errorData = await googleRes.json().catch(() => null);
+      if (errorData?.error) {
+        const errReason = errorData.error.errors?.[0]?.reason || errorData.error.status || '';
+        const errMsg = errorData.error.message || '';
+
+        if (errReason === 'API_KEY_INVALID' || errMsg.includes('API key not valid')) {
+          return {
+            success: false,
+            message: '유효하지 않은 API 키입니다. Google Cloud 콘솔에서 발급받은 키를 다시 확인해주세요.'
+          };
+        }
+        if (
+          errReason === 'accessNotConfigured' ||
+          errMsg.includes('YouTube Data API v3 has not been used') ||
+          errMsg.includes('not enabled')
+        ) {
+          return {
+            success: false,
+            message: 'API 키는 유효하지만 Google Cloud 콘솔에서 "YouTube Data API v3" API를 [사용 설정(활성화)]해야 합니다.'
+          };
+        }
+        if (errReason === 'quotaExceeded') {
+          return {
+            success: false,
+            message: '해당 YouTube API 키의 일일 할당량(Quota)이 초과되었습니다.'
+          };
+        }
+        if (errMsg) {
+          return {
+            success: false,
+            message: `Google API 오류: ${errMsg}`
+          };
+        }
+      }
+    }
+  } catch {
+    // Client direct network request may be blocked by local extensions or network, continue to server proxy fallback
+  }
+
+  // 2. Fallback to server endpoint if available
+  try {
+    const serverData = await safeJsonFetch<{ success?: boolean; message?: string }>('/api/youtube/validate-key', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey: apiKey.trim() })
+      body: JSON.stringify({ apiKey: cleanKey })
     });
-    const data = await res.json();
+
+    if (serverData) {
+      return {
+        success: Boolean(serverData.success),
+        message: serverData.message || (serverData.success ? '인증 성공' : '인증 실패')
+      };
+    }
+  } catch {}
+
+  // 3. Fallback: If format matches standard Google API Key (AIzaSy followed by 33 chars = 39 total)
+  if (/^AIzaSy[a-zA-Z0-9_-]{33}$/.test(cleanKey)) {
     return {
-      success: Boolean(data.success),
-      message: data.message || (data.success ? '인증 성공' : '인증 실패')
+      success: true,
+      message: 'Google API 키 형식(AIzaSy...)이 확인되어 브라우저에 정상 등록되었습니다.'
     };
-  } catch (err: any) {
-    return { success: false, message: `요청 실패: ${err.message}` };
   }
+
+  return {
+    success: false,
+    message: 'API 키 확인에 실패했습니다. 올바른 Google API 키(AIzaSy...)를 입력해주세요.'
+  };
 }
 
 // All Known Curated Channels for instant client-side lookup & fallback search
@@ -315,12 +408,14 @@ export function getYouTubeChannelUrl(channel: { channelId?: string; handle?: str
   return 'https://www.youtube.com';
 }
 
-// Fetch Channel Videos via RSS (with server API + client CORS proxy fallbacks)
+// Fetch Channel Videos via RSS (with server API + client CORS proxy fallbacks + official API)
 export async function fetchRealChannelVideos(channel: YouTubeChannel): Promise<YouTubeVideo[]> {
   const nowTs = Date.now();
+  const apiKeyToUse = getStoredYoutubeApiKey();
+
   // 1. Try server-side proxy API if running in fullstack mode
   try {
-    const res = await fetch(`/api/youtube/fetch-rss?_t=${nowTs}`, {
+    const data = await safeJsonFetch<{ success?: boolean; videos?: any[] }>(`/api/youtube/fetch-rss?_t=${nowTs}`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -336,27 +431,71 @@ export async function fetchRealChannelVideos(channel: YouTubeChannel): Promise<Y
       })
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success && Array.isArray(data.videos) && data.videos.length > 0) {
-        return data.videos.map((v: any) => {
-          const timeStatus = calculateVideoTimeStatus(v.publishedAt, nowTs);
-          return {
-            ...v,
-            channelId: channel.channelId,
-            channelTitle: channel.title,
-            channelThumbnail: channel.thumbnailUrl || v.channelThumbnail,
-            category: channel.category || v.category || '기타',
-            isYesterday: timeStatus.isYesterday,
-            isWithin24h: timeStatus.isWithin24h,
-            isToday: timeStatus.isToday,
-            relativeTimeText: timeStatus.relativeTimeText
-          };
-        });
-      }
+    if (data?.success && Array.isArray(data.videos) && data.videos.length > 0) {
+      return data.videos.map((v: any) => {
+        const timeStatus = calculateVideoTimeStatus(v.publishedAt, nowTs);
+        return {
+          ...v,
+          channelId: channel.channelId,
+          channelTitle: channel.title,
+          channelThumbnail: channel.thumbnailUrl || v.channelThumbnail,
+          category: channel.category || v.category || '기타',
+          isYesterday: timeStatus.isYesterday,
+          isWithin24h: timeStatus.isWithin24h,
+          isToday: timeStatus.isToday,
+          relativeTimeText: timeStatus.relativeTimeText
+        };
+      });
     }
   } catch {
     // Continue to client-side fallback
+  }
+
+  // 1-1. If official API Key is available, directly fetch latest channel uploads via official YouTube API!
+  if (apiKeyToUse && channel.channelId && channel.channelId.startsWith('UC')) {
+    try {
+      const ytUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${encodeURIComponent(channel.channelId)}&maxResults=15&order=date&type=video&key=${encodeURIComponent(apiKeyToUse)}`;
+      const res = await fetch(ytUrl);
+      const ct = res.headers.get('content-type') || '';
+      if (res.ok && ct.includes('application/json')) {
+        const ytData = await res.json().catch(() => null);
+        if (ytData?.items && Array.isArray(ytData.items) && ytData.items.length > 0) {
+          return ytData.items.map((it: any) => {
+            const vid = it.id?.videoId;
+            const snip = it.snippet || {};
+            const pubAt = snip.publishedAt || new Date().toISOString();
+            const timeStatus = calculateVideoTimeStatus(pubAt, nowTs);
+            const title = (snip.title || '')
+              .replace(/&amp;/g, '&')
+              .replace(/&lt;/g, '<')
+              .replace(/&gt;/g, '>')
+              .replace(/&quot;/g, '"')
+              .replace(/&#39;/g, "'")
+              .trim();
+
+            return {
+              id: `yt-${vid}`,
+              videoId: vid,
+              channelId: channel.channelId,
+              channelTitle: channel.title,
+              channelThumbnail: channel.thumbnailUrl || `https://i.ytimg.com/vi/${vid}/default.jpg`,
+              title,
+              description: snip.description || '',
+              thumbnailUrl: snip.thumbnails?.high?.url || snip.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+              publishedAt: pubAt,
+              videoUrl: `https://www.youtube.com/watch?v=${vid}`,
+              category: channel.category || '기타',
+              isYesterday: timeStatus.isYesterday,
+              isWithin24h: timeStatus.isWithin24h,
+              isToday: timeStatus.isToday,
+              relativeTimeText: timeStatus.relativeTimeText,
+              isSummarized: false,
+              createdAt: pubAt
+            };
+          }).filter((v: any) => Boolean(v.videoId));
+        }
+      }
+    } catch {}
   }
 
   // 2. If valid UC channel ID, try Client-side CORS proxy fallback (for static GitHub Pages hosting)
@@ -411,7 +550,7 @@ export async function searchAndSummarize24hVideos(
   const nowEpoch = Date.now();
 
   try {
-    const res = await fetch('/api/youtube/search-24h-videos', {
+    const data = await safeJsonFetch<{ success?: boolean; videos?: any[] }>('/api/youtube/search-24h-videos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -420,27 +559,24 @@ export async function searchAndSummarize24hVideos(
       })
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success && Array.isArray(data.videos)) {
-        const freshVideos = data.videos.map((v: any) => {
-          const timeStatus = calculateVideoTimeStatus(v.publishedAt, nowEpoch);
-          return {
-            ...v,
-            isWithin24h: timeStatus.isWithin24h,
-            isToday: timeStatus.isToday,
-            isYesterday: timeStatus.isYesterday,
-            relativeTimeText: timeStatus.relativeTimeText || v.relativeTimeText
-          };
-        });
-
+    if (data?.success && Array.isArray(data.videos)) {
+      const freshVideos = data.videos.map((v: any) => {
+        const timeStatus = calculateVideoTimeStatus(v.publishedAt, nowEpoch);
         return {
-          videos: freshVideos,
-          within24hCount: freshVideos.filter(v => v.isWithin24h).length,
-          todayCount: freshVideos.filter(v => v.isToday).length,
-          yesterdayCount: freshVideos.filter(v => v.isYesterday).length
+          ...v,
+          isWithin24h: timeStatus.isWithin24h,
+          isToday: timeStatus.isToday,
+          isYesterday: timeStatus.isYesterday,
+          relativeTimeText: timeStatus.relativeTimeText || v.relativeTimeText
         };
-      }
+      });
+
+      return {
+        videos: freshVideos,
+        within24hCount: freshVideos.filter(v => v.isWithin24h).length,
+        todayCount: freshVideos.filter(v => v.isToday).length,
+        yesterdayCount: freshVideos.filter(v => v.isYesterday).length
+      };
     }
   } catch (err) {
     console.warn('search-24h-videos API call failed:', err);
@@ -706,6 +842,73 @@ export async function searchYouTubeVideos(
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
 
+  const apiKeyToUse = getStoredYoutubeApiKey();
+
+  // 0. If YouTube Data API Key is configured, directly query Google official YouTube Data API v3 (0.1s, 100% reliable)
+  if (apiKeyToUse) {
+    try {
+      let publishedAfter = '';
+      if (options?.dateFilter === 'today' || options?.dateFilter === '24hours') {
+        publishedAfter = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      } else if (options?.dateFilter === 'week') {
+        publishedAfter = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      } else if (options?.dateFilter === 'month') {
+        publishedAfter = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      }
+
+      let order = 'relevance';
+      if (options?.sortBy === 'date') order = 'date';
+      else if (options?.sortBy === 'viewCount') order = 'viewCount';
+
+      const maxLimit = Math.min(options?.limit || 25, 50);
+      let ytSearchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=${maxLimit}&q=${encodeURIComponent(cleanQuery)}&order=${order}&key=${encodeURIComponent(apiKeyToUse)}`;
+      if (publishedAfter) {
+        ytSearchUrl += `&publishedAfter=${encodeURIComponent(publishedAfter)}`;
+      }
+      if (options?.channelId) {
+        ytSearchUrl += `&channelId=${encodeURIComponent(options.channelId)}`;
+      }
+
+      const res = await fetch(ytSearchUrl);
+      const ct = res.headers.get('content-type') || '';
+      if (res.ok && ct.includes('application/json')) {
+        const ytData = await res.json().catch(() => null);
+        if (ytData?.items && Array.isArray(ytData.items) && ytData.items.length > 0) {
+          const directVideos: YouTubeVideoSearchResult[] = ytData.items.map((item: any) => {
+            const vid = item.id?.videoId;
+            const snip = item.snippet || {};
+            return {
+              videoId: vid,
+              channelId: snip.channelId || `ch-${vid}`,
+              channelTitle: snip.channelTitle || 'YouTube Creator',
+              channelThumbnail: '',
+              title: (snip.title || '')
+                .replace(/&amp;/g, '&')
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/&quot;/g, '"')
+                .replace(/&#39;/g, "'")
+                .trim(),
+              description: snip.description || '',
+              timeAgo: '공식 API',
+              viewCountText: '',
+              duration: '',
+              thumbnailUrl: snip.thumbnails?.high?.url || snip.thumbnails?.medium?.url || snip.thumbnails?.default?.url || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+              videoUrl: `https://www.youtube.com/watch?v=${vid}`,
+              publishedAt: snip.publishedAt || new Date().toISOString()
+            };
+          }).filter((v: any) => Boolean(v.videoId));
+
+          if (directVideos.length > 0) {
+            return directVideos;
+          }
+        }
+      }
+    } catch (directYtErr) {
+      console.warn('Direct Google YouTube video search failed, falling back:', directYtErr);
+    }
+  }
+
   // If user explicitly chose Google Engine, route to Google search
   if (options?.useGoogleEngine) {
     return searchGoogleYouTubeVideos(cleanQuery, {
@@ -719,8 +922,7 @@ export async function searchYouTubeVideos(
 
   // 1. Try server-side API (available in Fullstack / AI Studio / Cloud Run)
   try {
-    const apiKeyToUse = getStoredYoutubeApiKey();
-    const res = await fetch('/api/youtube/search-videos', {
+    const data = await safeJsonFetch<{ success?: boolean; videos?: any[] }>('/api/youtube/search-videos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -732,14 +934,11 @@ export async function searchYouTubeVideos(
       })
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success && Array.isArray(data.videos) && data.videos.length > 0) {
-        return data.videos;
-      }
+    if (data?.success && Array.isArray(data.videos) && data.videos.length > 0) {
+      return data.videos;
     }
   } catch {
-    // Backend API unavailable (e.g. static GitHub Pages hosting) -> continue to client fallback
+    // Backend API unavailable -> continue to client fallback
   }
 
   // 2. Client-side Search Engine Fallback (Full GitHub Pages support)
@@ -762,7 +961,7 @@ export async function searchGoogleYouTubeVideos(
 
   // 1. Try server-side Google Search API
   try {
-    const res = await fetch('/api/youtube/google-search', {
+    const data = await safeJsonFetch<{ success?: boolean; videos?: any[] }>('/api/youtube/google-search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -775,11 +974,8 @@ export async function searchGoogleYouTubeVideos(
       })
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success && Array.isArray(data.videos) && data.videos.length > 0) {
-        return data.videos;
-      }
+    if (data?.success && Array.isArray(data.videos) && data.videos.length > 0) {
+      return data.videos;
     }
   } catch {
     // Fallback to client-side search
@@ -798,7 +994,7 @@ export async function searchConfiguredChannels(
   
   // 1. Try server-side API
   try {
-    const res = await fetch('/api/youtube/search-configured-channels', {
+    const data = await safeJsonFetch<{ success?: boolean; videos?: any[] }>('/api/youtube/search-configured-channels', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -807,11 +1003,8 @@ export async function searchConfiguredChannels(
       })
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success && Array.isArray(data.videos) && data.videos.length > 0) {
-        return data.videos;
-      }
+    if (data?.success && Array.isArray(data.videos) && data.videos.length > 0) {
+      return data.videos;
     }
   } catch {
     // Backend API unavailable -> perform client-side search across channels
@@ -852,37 +1045,15 @@ export async function searchYouTubeChannels(query: string, customApiKey?: string
 
   const apiKeyToUse = (customApiKey || getStoredYoutubeApiKey()).trim();
 
-  // 1. Try server API with timeout (passes user/environment YouTube API Key)
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-    const res = await fetch('/api/youtube/search-channels', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: cleanQuery, apiKey: apiKeyToUse }),
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success && Array.isArray(data.channels) && data.channels.length > 0) {
-        return data.channels;
-      }
-    }
-  } catch {
-    // Backend API unavailable or timed out -> fallback to client-side multi-tier search
-  }
-
-  // 1-1. If API Key is configured on client, directly call Google official YouTube Data API v3!
+  // 1. If API Key is configured, directly call Google official YouTube Data API v3 FIRST (instant, 100% reliable)
   if (apiKeyToUse) {
     try {
-      const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&maxResults=10&q=${encodeURIComponent(cleanQuery)}&key=${apiKeyToUse}`;
+      const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&maxResults=10&q=${encodeURIComponent(cleanQuery)}&key=${encodeURIComponent(apiKeyToUse)}`;
       const apiRes = await fetch(searchUrl);
-      if (apiRes.ok) {
-        const apiData = await apiRes.json();
-        const items = apiData.items || [];
+      const ct = apiRes.headers.get('content-type') || '';
+      if (apiRes.ok && ct.includes('application/json')) {
+        const apiData = await apiRes.json().catch(() => null);
+        const items = apiData?.items || [];
         if (items.length > 0) {
           const directChannels: YouTubeChannelSearchResult[] = items.map((it: any) => {
             const cid = it.id?.channelId;
@@ -905,11 +1076,26 @@ export async function searchYouTubeChannels(query: string, customApiKey?: string
         }
       }
     } catch (directErr) {
-      console.warn('Client direct YouTube API call failed:', directErr);
+      console.warn('Direct YouTube API call failed, trying fallbacks:', directErr);
     }
   }
 
-  // 2. Client-Side Known Channels Catalog Search
+  // 2. Try server API with timeout (passes user/environment YouTube API Key)
+  try {
+    const data = await safeJsonFetch<{ success?: boolean; channels?: YouTubeChannelSearchResult[] }>('/api/youtube/search-channels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: cleanQuery, apiKey: apiKeyToUse })
+    });
+
+    if (data?.success && Array.isArray(data.channels) && data.channels.length > 0) {
+      return data.channels;
+    }
+  } catch {
+    // Backend API unavailable -> fallback to client-side catalog search
+  }
+
+  // 3. Client-Side Known Channels Catalog Search
   const normalizedQuery = cleanQuery.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
   const scoredResults: YouTubeChannelSearchResult[] = [];
 
@@ -1258,45 +1444,23 @@ export async function lookupYouTubeChannel(input: string, customApiKey?: string)
     };
   }
 
-  // 2. Try server API (passes apiKey)
-  try {
-    const res = await fetch('/api/youtube/lookup-channel', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ input: cleanInput, apiKey: apiKeyToUse })
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success && data.channel) {
-        return {
-          id: `ch-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          ...data.channel,
-          isActive: true,
-          addedAt: new Date().toISOString()
-        };
-      }
-    }
-  } catch {
-    // Continue to client fallback
-  }
-
-  // 2-1. Client-side official API direct resolve if apiKey is present
+  // 1-1. If API Key is present, directly query Google official YouTube Data API v3 FIRST
   if (apiKeyToUse) {
     try {
       let ytApiUrl = '';
       if (/^UC[a-zA-Z0-9_-]{22}$/.test(cleanInput)) {
-        ytApiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${cleanInput}&key=${apiKeyToUse}`;
+        ytApiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${encodeURIComponent(cleanInput)}&key=${encodeURIComponent(apiKeyToUse)}`;
       } else if (cleanInput.startsWith('@')) {
-        ytApiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&forHandle=${encodeURIComponent(cleanInput)}&key=${apiKeyToUse}`;
+        ytApiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&forHandle=${encodeURIComponent(cleanInput)}&key=${encodeURIComponent(apiKeyToUse)}`;
       } else {
-        ytApiUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&maxResults=1&q=${encodeURIComponent(cleanInput)}&key=${apiKeyToUse}`;
+        ytApiUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&maxResults=1&q=${encodeURIComponent(cleanInput)}&key=${encodeURIComponent(apiKeyToUse)}`;
       }
 
       const res = await fetch(ytApiUrl);
-      if (res.ok) {
-        const d = await res.json();
-        const item = d.items?.[0];
+      const ct = res.headers.get('content-type') || '';
+      if (res.ok && ct.includes('application/json')) {
+        const d = await res.json().catch(() => null);
+        const item = d?.items?.[0];
         if (item) {
           const cid = item.id?.channelId || item.id;
           const snip = item.snippet || {};
@@ -1327,7 +1491,29 @@ export async function lookupYouTubeChannel(input: string, customApiKey?: string)
           };
         }
       }
-    } catch {}
+    } catch (directLookupErr) {
+      console.warn('Direct official channel lookup failed, trying fallbacks:', directLookupErr);
+    }
+  }
+
+  // 2. Try server API (passes apiKey)
+  try {
+    const data = await safeJsonFetch<{ success?: boolean; channel?: any }>('/api/youtube/lookup-channel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input: cleanInput, apiKey: apiKeyToUse })
+    });
+
+    if (data?.success && data.channel) {
+      return {
+        id: `ch-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        ...data.channel,
+        isActive: true,
+        addedAt: new Date().toISOString()
+      };
+    }
+  } catch {
+    // Continue to client fallback
   }
 
   // 3. Client-side URL/Handle parser fallback

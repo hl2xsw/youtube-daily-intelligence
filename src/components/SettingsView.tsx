@@ -33,6 +33,7 @@ import {
   X,
   RefreshCw,
   Eye,
+  EyeOff,
   CheckSquare,
   Square,
   ListFilter,
@@ -110,6 +111,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [serverKeyMasked, setServerKeyMasked] = useState<string | null>(null);
   const [serverKeySource, setServerKeySource] = useState<string | null>(null);
   const [isTestingApiKey, setIsTestingApiKey] = useState(false);
+  const [showKeyPlaintext, setShowKeyPlaintext] = useState(false);
   const [showApiKeySection, setShowApiKeySection] = useState(true);
   const [apiKeyStatusMessage, setApiKeyStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
@@ -486,21 +488,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               <div className="relative flex-1">
                 <input
-                  type="password"
-                  placeholder={hasServerApiKey ? `.env 파일(${serverKeySource || '환경변수'})에서 이미 API 키를 사용 중입니다 (새 키로 변경 가능)` : "발급받으신 YouTube Data API v3 키를 입력하세요 (예: AIzaSy...)"}
+                  type={showKeyPlaintext ? 'text' : 'password'}
+                  placeholder={hasServerApiKey ? `.env 파일(${serverKeySource || '환경변수'})에서 이미 API 키를 사용 중입니다 (새 키 입력 시 덮어쓰기)` : "Google Cloud에서 발급받은 YouTube Data API v3 키를 붙여넣으세요 (예: AIzaSy...)"}
                   value={apiKeyInput}
                   onChange={(e) => setApiKeyInput(e.target.value)}
-                  className="w-full px-3 py-2 text-xs sm:text-sm bg-slate-950/60 border border-slate-700 rounded-lg text-white placeholder:text-slate-500 focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-400 transition-all font-mono"
+                  className="w-full pl-3 pr-16 py-2 text-xs sm:text-sm bg-slate-950/60 border border-slate-700 rounded-lg text-white placeholder:text-slate-500 focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-400 transition-all font-mono"
                 />
-                {apiKeyInput && (
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                   <button
                     type="button"
-                    onClick={() => setApiKeyInput('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5"
+                    onClick={() => setShowKeyPlaintext(prev => !prev)}
+                    title={showKeyPlaintext ? '키 숨기기' : '키 표시'}
+                    className="text-slate-400 hover:text-white p-1 rounded transition-colors"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    {showKeyPlaintext ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   </button>
-                )}
+                  {apiKeyInput && (
+                    <button
+                      type="button"
+                      onClick={() => setApiKeyInput('')}
+                      title="지우기"
+                      className="text-slate-400 hover:text-white p-1 rounded transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
