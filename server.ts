@@ -500,6 +500,66 @@ const KNOWN_CHANNELS_MAP: Array<{
     thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_nerdult=s900-c-k-c0x00ffffff-no-rj',
     category: '기타',
     subscriberCount: '185만명'
+  },
+  {
+    keywords: ['박세리', '박세리의 속사정', '박세리의속사정', '세리', '골프', 'seripak', 'seri', '박세리tv'],
+    channelId: 'UCL1twT4afZX1hzPwV9pNrcA',
+    title: '박세리의 속사정',
+    handle: '@박세리의속사정',
+    description: '딱 한 번 뿐인 삶, 솔직하고 유쾌한 박세리의 일상과 속사정 이야기',
+    thumbnailUrl: 'https://yt3.ggpht.com/YodA4ZWOfrsmMa2Vg0sC9tliHP320u6RjjcpDhFoSB3KOy1Z61UIaf2RFi7gAyThLgRClK_x=s176-c-k-c0x00ffffff-no-rj-mo',
+    category: '기타',
+    subscriberCount: '13.2만명'
+  },
+  {
+    keywords: ['백종원', 'paik', '백종원의요리비책', '요리', '레시피', '외식', '장사'],
+    channelId: 'UCyn-K7rZLXjGl7VXGweM5cA',
+    title: '백종원 PAIK JONG WON',
+    handle: '@paik_jongwon',
+    description: '백종원의 쉽고 맛있는 요리 레시피와 글로벌 외식 이야기',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_paik=s900-c-k-c0x00ffffff-no-rj',
+    category: '기타',
+    subscriberCount: '610만명'
+  },
+  {
+    keywords: ['침착맨', '이말년', '침착맨플러스', '침착맨원본', '스트리머', '토크'],
+    channelId: 'UCUj6rrhMTR9PIP27gTw9MQw',
+    title: '침착맨',
+    handle: '@chimchakman',
+    description: '침착한 남자, 이말년의 종합 엔터테인먼트 토크 방송',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_chim=s900-c-k-c0x00ffffff-no-rj',
+    category: '기타',
+    subscriberCount: '265만명'
+  },
+  {
+    keywords: ['뜬뜬', 'dadvanced', '핑계고', '유재석', '미니핑계고', '빰빰'],
+    channelId: 'UCiz6jeCQGZRU8492VD_fHeg',
+    title: '뜬뜬 DdeunDdeun',
+    handle: '@DdeunDdeun',
+    description: '작지만 확실한 행복을 전하는 뜬뜬 채널 (유재석의 핑계고)',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_ddeun=s900-c-k-c0x00ffffff-no-rj',
+    category: '기타',
+    subscriberCount: '210만명'
+  },
+  {
+    keywords: ['김작가tv', '김작가', '재테크', '자기계발', '인터뷰', '부자'],
+    channelId: 'UCQ0L_B5j6Q3H4_3vM7H5j9A',
+    title: '김작가 TV',
+    handle: '@kimwriter_tv',
+    description: '부와 성공, 삶의 지혜를 전하는 대한민국 대표 인터뷰 채널',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_kimwriter=s900-c-k-c0x00ffffff-no-rj',
+    category: '경제/재테크',
+    subscriberCount: '190만명'
+  },
+  {
+    keywords: ['월급쟁이부자들', '월부', '부동산', '내집마련', '월부tv', '투자'],
+    channelId: 'UC39zVzR_Y4T4R4t7N5K6q7A',
+    title: '월급쟁이부자들TV',
+    handle: '@weolbu',
+    description: '대한민국 월급쟁이들을 위한 내집마련과 실전 재테크 가이드',
+    thumbnailUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_weolbu=s900-c-k-c0x00ffffff-no-rj',
+    category: '경제/재테크',
+    subscriberCount: '165만명'
   }
 ];
 
@@ -849,52 +909,60 @@ app.post('/api/youtube/search-channels', async (req, res) => {
 
       // Exact channel title match
       if (titleNorm === normalized) {
-        score = 1000;
+        score = 1600;
         isExact = true;
-        matchReason = '채널명 정확 일치';
+        matchReason = '채널명 일치';
       } 
       // Handle exact match
       else if (handleNorm === normalized || `@${handleNorm}` === `@${normalized}`) {
-        score = 950;
+        score = 1500;
         isExact = true;
         matchReason = '핸들(@) 일치';
       } 
       // Keyword exact match
       else if (item.keywords.some(kw => kw.toLowerCase().replace(/[^a-z0-9가-힣]/g, '') === normalized)) {
-        score = 900;
+        score = 1450;
         isExact = true;
-        matchReason = '대표 키워드 일치';
+        matchReason = '공식 대표 채널';
       } 
       // Title prefix match
       else if (titleNorm.startsWith(normalized)) {
-        score = 700;
-        isExact = normalized.length >= 3 && titleNorm.length <= normalized.length + 3;
-        matchReason = '채널명 시작 일치';
+        score = 1200;
+        isExact = normalized.length >= 2;
+        matchReason = '공식 채널 일치';
       } 
       // Title substring or query substring
       else if (titleNorm.includes(normalized) || (normalized.length >= 2 && normalized.includes(titleNorm))) {
-        score = 550;
-        matchReason = '채널명 포함';
+        score = 1100;
+        isExact = normalized.length >= 2;
+        matchReason = '공식 관련 채널';
       } 
       // Keywords substring match
       else if (item.keywords.some(kw => {
         const kwNorm = kw.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
         return kwNorm.includes(normalized) || (normalized.length >= 2 && normalized.includes(kwNorm));
       })) {
-        score = 450;
-        matchReason = '관련 키워드 매칭';
+        score = 950;
+        isExact = true;
+        matchReason = '공식 추천 채널';
       } 
       // Description or category match
       else if (descNorm.includes(normalized)) {
-        score = 250;
+        score = 450;
         matchReason = '채널 소개 키워드';
       } else if (catNorm.includes(normalized)) {
-        score = 150;
+        score = 250;
         matchReason = `${item.category} 카테고리`;
       }
 
       if (score > 0) {
         seenIds.add(item.channelId);
+        const subNum = parseSubscriberCountNumber(item.subscriberCount);
+        let catalogBonus = 0;
+        if (subNum >= 1000000) catalogBonus = 400;
+        else if (subNum >= 100000) catalogBonus = 250;
+        else if (subNum >= 10000) catalogBonus = 100;
+
         results.push({
           channelId: item.channelId,
           title: item.title,
@@ -904,57 +972,77 @@ app.post('/api/youtube/search-channels', async (req, res) => {
           subscriberCount: item.subscriberCount,
           category: item.category,
           isExactMatch: isExact,
-          matchReason: matchReason || '추천 채널',
-          matchScore: score
+          matchReason: matchReason || '공식 추천 채널',
+          matchScore: score + catalogBonus
         });
       }
     }
 
     // 3. YouTube Search with Channel Filter via Innertube (Primary) and Scraping (Fallback)
     try {
-      let channelData: any = null;
+      const channelDataList: any[] = [];
 
-      // Tier 1: Innertube Channel Search
-      const innertubeRes = await fetch('https://www.youtube.com/youtubei/v1/search', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-          'Cookie': 'SOCS=CAISNQgDEitib3FfaWRlbnRpdHlmc2J1aWxkdG9vbHNsYXVkZXJfc2VydmVyXzIwMjQwMjI1LjA1X3AwGgJrbxACGgJrbw; YSC=a; GPS=1'
-        },
-        body: JSON.stringify({
-          context: { client: { clientName: 'WEB', clientVersion: '2.20240501.01.00', hl: 'ko', gl: 'KR' } },
-          query: clean,
-          params: 'EgIQAg%3D%3D' // Channel filter
-        })
-      });
+      // Try Innertube Channel Search with multiple params (raw EgIQAg== and encoded)
+      const innertubeQueries = [
+        { params: 'EgIQAg==' },
+        { params: 'EgIQAg%3D%3D' },
+        { params: undefined } // general search to catch active creators
+      ];
 
-      if (innertubeRes.ok) {
+      for (const itq of innertubeQueries) {
         try {
-          channelData = await innertubeRes.json();
-        } catch {}
+          const bodyPayload: any = {
+            context: { client: { clientName: 'WEB', clientVersion: '2.20250101.00.00', hl: 'ko', gl: 'KR' } },
+            query: clean
+          };
+          if (itq.params) bodyPayload.params = itq.params;
+
+          const innertubeRes = await fetch('https://www.youtube.com/youtubei/v1/search', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+              'Cookie': 'SOCS=CAISNQgDEitib3FfaWRlbnRpdHlmc2J1aWxkdG9vbHNsYXVkZXJfc2VydmVyXzIwMjQwMjI1LjA1X3AwGgJrbxACGgJrbw; YSC=a; GPS=1'
+            },
+            body: JSON.stringify(bodyPayload)
+          });
+
+          if (innertubeRes.ok) {
+            const data = await innertubeRes.json();
+            if (data) {
+              channelDataList.push(data);
+              // If we got channel results from the filtered search, we have good candidates
+              break;
+            }
+          }
+        } catch {
+          // continue to next query
+        }
       }
 
-      if (!channelData) {
-        // Tier 2: Scraping Fallback
+      // If Innertube was completely blocked, try HTML scraping
+      if (channelDataList.length === 0) {
         const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(clean)}&sp=EgIQAg%253D%253D`;
         const searchRes = await fetch(searchUrl, {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Cookie': 'SOCS=CAISNQgDEitib3FfaWRlbnRpdHlmc2J1aWxkdG9vbHNsYXVkZXJfc2VydmVyXzIwMjQwMjI1LjA1X3AwGgJrbxACGgJrbw; YSC=a; GPS=1'
           }
         });
         if (searchRes.ok) {
           const html = await searchRes.text();
           const match = html.match(/var ytInitialData = ({.*?});<\/script>/s) || html.match(/ytInitialData\s*=\s*({.+?});/s);
           if (match) {
-            channelData = JSON.parse(match[1]);
+            try {
+              channelDataList.push(JSON.parse(match[1]));
+            } catch {}
           }
         }
       }
 
-      if (channelData) {
+      for (const channelData of channelDataList) {
         const traverse = (node: any) => {
           if (!node || typeof node !== 'object') return;
           if (node.channelRenderer) {
@@ -1002,45 +1090,67 @@ app.post('/api/youtube/search-channels', async (req, res) => {
                 )
               );
 
+              const isDirectlyRelevant = crTitleNorm.includes(normalized) || 
+                                         normalized.includes(crTitleNorm) || 
+                                         handleNorm.includes(normalized);
+
+              // Heavy subscriber weighting: Popular channels must clearly outrank empty personal accounts
               let subBonus = 0;
-              if (subNum >= 2000000) subBonus = 950;
-              else if (subNum >= 1000000) subBonus = 850;
-              else if (subNum >= 500000) subBonus = 700;
-              else if (subNum >= 100000) subBonus = 500;
+              if (subNum >= 2000000) subBonus = 1200;
+              else if (subNum >= 1000000) subBonus = 1000;
+              else if (subNum >= 500000) subBonus = 800;
+              else if (subNum >= 100000) subBonus = 650;
+              else if (subNum >= 50000) subBonus = 500;
               else if (subNum >= 10000) subBonus = 300;
               else if (subNum >= 1000) subBonus = 100;
+              else if (subNum < 100) subBonus = -250; // Penalty for ghost/empty personal accounts
 
-              const verifiedBonus = isVerified ? 650 : 0;
+              let verifiedBonus = isVerified ? 750 : 0;
+
+              // If channel has zero text relevance to query, restrict popularity bonuses
+              if (!isDirectlyRelevant) {
+                subBonus = Math.min(subBonus, 150);
+                verifiedBonus = 0;
+              }
 
               const crTitleNorm = title.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
               const handleNorm = handle.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
 
-              let baseScore = 200;
+              let baseScore = isDirectlyRelevant ? 200 : 50;
               let isExact = false;
               let matchReason = '유튜브 검색 채널';
 
+              // Exact match or contains with significant subscribers
               if (crTitleNorm === normalized) {
-                baseScore = 1100;
-                isExact = true;
-                matchReason = isVerified ? '공식 인증 채널 일치' : '채널명 정확 일치';
+                if (subNum >= 5000 || isVerified) {
+                  baseScore = 1600;
+                  isExact = true;
+                  matchReason = isVerified ? '공식 인증 채널 일치' : '채널명 정확 일치';
+                } else {
+                  baseScore = 600; // Small personal account with exact name
+                  isExact = false;
+                  matchReason = '채널명 일치 (개인 계정)';
+                }
               } else if (handleNorm === normalized || `@${handleNorm}` === `@${normalized}`) {
-                baseScore = 1050;
+                baseScore = 1500;
                 isExact = true;
                 matchReason = '공식 핸들(@) 일치';
               } else if (crTitleNorm.startsWith(normalized)) {
-                baseScore = 850;
-                if (normalized.length >= 3 && (subNum >= 100000 || isVerified)) {
+                if (subNum >= 30000 || isVerified) {
+                  baseScore = 1400;
                   isExact = true;
-                  matchReason = '공식 채널 일치';
+                  matchReason = '공식 대표 채널';
                 } else {
+                  baseScore = 700;
                   matchReason = '채널명 시작 일치';
                 }
               } else if (crTitleNorm.includes(normalized)) {
-                baseScore = 750;
-                if (normalized.length >= 3 && (subNum >= 100000 || isVerified)) {
+                if (subNum >= 30000 || isVerified) {
+                  baseScore = 1350;
                   isExact = true;
-                  matchReason = '공식 인증 대표 채널';
+                  matchReason = '공식 대표 채널';
                 } else {
+                  baseScore = 600;
                   matchReason = '채널명 포함';
                 }
               } else if (normalized.includes(crTitleNorm) && crTitleNorm.length >= 2) {
@@ -1133,8 +1243,12 @@ app.post('/api/youtube/search-channels', async (req, res) => {
       }
     }
 
-    // 5. Final Sorting by Match Score Descending
-    results.sort((a, b) => b.matchScore - a.matchScore);
+    // 5. Final Sorting: Exact Matches First, then by matchScore Descending
+    results.sort((a, b) => {
+      if (a.isExactMatch && !b.isExactMatch) return -1;
+      if (!a.isExactMatch && b.isExactMatch) return 1;
+      return b.matchScore - a.matchScore;
+    });
 
     res.json({ success: true, channels: results.slice(0, 18) });
   } catch (error: any) {

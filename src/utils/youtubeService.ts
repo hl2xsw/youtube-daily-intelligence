@@ -757,13 +757,18 @@ export async function searchYouTubeChannels(query: string): Promise<YouTubeChann
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
 
-  // 1. Try server API
+  // 1. Try server API with timeout
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
     const res = await fetch('/api/youtube/search-channels', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: cleanQuery })
+      body: JSON.stringify({ query: cleanQuery }),
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
 
     if (res.ok) {
       const data = await res.json();
@@ -772,7 +777,7 @@ export async function searchYouTubeChannels(query: string): Promise<YouTubeChann
       }
     }
   } catch {
-    // Backend API unavailable -> fallback to known channels catalog search
+    // Backend API unavailable or timed out -> fallback to client-side multi-tier search
   }
 
   // 2. Client-Side Known Channels Catalog Search
@@ -790,28 +795,29 @@ export async function searchYouTubeChannels(query: string): Promise<YouTubeChann
     let isExactMatch = false;
 
     if (titleNorm === normalizedQuery) {
-      score = 1000;
+      score = 1500;
       isExactMatch = true;
-      matchReason = '채널명 정확 일치';
+      matchReason = '채널명 일치';
     } else if (handleNorm === normalizedQuery || `@${handleNorm}` === `@${normalizedQuery}`) {
-      score = 900;
+      score = 1400;
       isExactMatch = true;
       matchReason = '핸들(@) 일치';
     } else if (titleNorm.startsWith(normalizedQuery)) {
-      score = 600;
-      isExactMatch = normalizedQuery.length >= 3 && titleNorm.length <= normalizedQuery.length + 2;
+      score = 1000;
+      isExactMatch = normalizedQuery.length >= 2;
       matchReason = '채널명 시작 일치';
     } else if (titleNorm.includes(normalizedQuery) || normalizedQuery.includes(titleNorm)) {
-      score = 450;
+      score = 900;
+      isExactMatch = normalizedQuery.length >= 2;
       matchReason = '채널명 포함';
     } else if (handleNorm.includes(normalizedQuery) || normalizedQuery.includes(handleNorm)) {
-      score = 400;
+      score = 800;
       matchReason = '핸들(@) 포함';
     } else if (descNorm.includes(normalizedQuery)) {
-      score = 250;
+      score = 350;
       matchReason = '채널 소개 키워드';
     } else if (catNorm.includes(normalizedQuery)) {
-      score = 150;
+      score = 200;
       matchReason = `${item.category} 카테고리`;
     }
 
@@ -832,27 +838,70 @@ export async function searchYouTubeChannels(query: string): Promise<YouTubeChann
   }
 
   if (scoredResults.length > 0) {
-    // Sort by match score descending
     scoredResults.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
     return scoredResults.slice(0, 15);
   }
 
-  // 3. Fallback: try single direct lookup
-  const single = await lookupYouTubeChannel(cleanQuery);
-  if (single && single.channelId) {
-    return [{
-      channelId: single.channelId,
-      title: single.title,
-      handle: single.handle,
-      description: single.description || `${single.title} 채널`,
-      thumbnailUrl: single.thumbnailUrl,
-      subscriberCount: single.subscriberCount || '구독자 정보 없음',
-      category: single.category,
-      isExactMatch: true,
-      matchReason: '직접 검색 채널'
-    }];
+  // 3. Client Fallback: Real YouTube Scraping via CORS proxy (NEVER return fake dummy channels)
+  try {
+    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(`https://www.youtube.com/results?search_query=${encodeURIComponent(cleanQuery)}&sp=EgIQAg%253D%253D`)}`;
+    const scrapeRes = await fetch(proxyUrl, { headers: { 'Cache-Control': 'no-cache' } });
+    if (scrapeRes.ok) {
+      const html = await scrapeRes.text();
+      const match = html.match(/var ytInitialData = ({.*?});<\/script>/s) || html.match(/ytInitialData\s*=\s*({.+?});/s);
+      if (match) {
+        const parsed = JSON.parse(match[1]);
+        const foundChannels: YouTubeChannelSearchResult[] = [];
+        const seen = new Set<string>();
+
+        const walk = (node: any) => {
+          if (!node || typeof node !== 'object') return;
+          if (node.channelRenderer) {
+            const cr = node.channelRenderer;
+            const cid = cr.channelId;
+            if (cid && cid.startsWith('UC') && !seen.has(cid)) {
+              seen.add(cid);
+              const tit = cr.title?.simpleText || cr.title?.runs?.map((r: any) => r.text).join('') || cleanQuery;
+              let hdl = cr.navigationEndpoint?.browseEndpoint?.canonicalBaseUrl || '';
+              if (hdl.startsWith('/')) hdl = hdl.substring(1);
+              if (hdl && !hdl.startsWith('@')) hdl = `@${hdl}`;
+
+              const subs = cr.videoCountText?.simpleText || cr.subscriberCountText?.simpleText || '유튜브 채널';
+              let thumb = cr.thumbnail?.thumbnails?.[cr.thumbnail.thumbnails.length - 1]?.url || '';
+              if (thumb.startsWith('//')) thumb = 'https:' + thumb;
+
+              const titNorm = tit.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+              const isExact = titNorm.includes(normalizedQuery) || normalizedQuery.includes(titNorm);
+
+              foundChannels.push({
+                channelId: cid,
+                title: tit,
+                handle: hdl || `@${tit.replace(/\s+/g, '')}`,
+                subscriberCount: subs,
+                description: `${tit} 유튜브 채널`,
+                thumbnailUrl: thumb || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
+                category: '기타',
+                isExactMatch: isExact,
+                matchReason: isExact ? '공식 검색 일치' : '유튜브 검색 채널',
+                matchScore: isExact ? 1100 : 500
+              });
+            }
+          }
+          for (const k of Object.keys(node)) walk(node[k]);
+        };
+        walk(parsed);
+
+        if (foundChannels.length > 0) {
+          foundChannels.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+          return foundChannels.slice(0, 10);
+        }
+      }
+    }
+  } catch {
+    // Fail silently on proxy error
   }
 
+  // 4. Return empty array if truly not found (Never return fake dummy channel)
   return [];
 }
 
@@ -1145,16 +1194,21 @@ export async function lookupYouTubeChannel(input: string): Promise<YouTubeChanne
     } catch {}
   }
 
+  // If we couldn't resolve a real YouTube channel ID (UC...), do not return a fake dummy channel
+  if (!channelId || !channelId.startsWith('UC') || channelId.startsWith('UC_')) {
+    return null;
+  }
+
   const formattedHandle = handle 
     ? handle 
     : (cleanInput.startsWith('@') ? cleanInput : `@${cleanInput.replace(/\s+/g, '')}`);
 
   return {
     id: `ch-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-    channelId: channelId || (handle ? `UC_handle_${handle}` : `UC_${cleanInput}`),
+    channelId,
     title,
     handle: formattedHandle,
-    description: `${title} 채널 (사용자 직접 등록)`,
+    description: `${title} 채널`,
     thumbnailUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
     category: 'IT/테크',
     isActive: true,

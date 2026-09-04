@@ -37,6 +37,7 @@ import {
 import { useToast } from './Toast';
 
 const POPULAR_SEARCH_KEYWORDS = [
+  '박세리',
   '슈카월드',
   '삼프로TV',
   '경읽남',

@@ -120,6 +120,18 @@ export const DEFAULT_CHANNELS: YouTubeChannel[] = [
     isActive: true,
     subscriberCount: '51.7만명',
     addedAt: new Date().toISOString()
+  },
+  {
+    id: 'ch-pakseri',
+    channelId: 'UCL1twT4afZX1hzPwV9pNrcA',
+    title: '박세리의 속사정',
+    handle: '@박세리의속사정',
+    description: '딱 한 번 뿐인 삶, 솔직하고 유쾌한 박세리의 일상과 속사정 이야기',
+    thumbnailUrl: 'https://yt3.ggpht.com/YodA4ZWOfrsmMa2Vg0sC9tliHP320u6RjjcpDhFoSB3KOy1Z61UIaf2RFi7gAyThLgRClK_x=s176-c-k-c0x00ffffff-no-rj-mo',
+    category: '기타',
+    isActive: true,
+    subscriberCount: '13.2만명',
+    addedAt: new Date().toISOString()
   }
 ];
 
