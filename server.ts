@@ -1090,6 +1090,9 @@ app.post('/api/youtube/search-channels', async (req, res) => {
                 )
               );
 
+              const crTitleNorm = title.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+              const handleNorm = handle.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+
               const isDirectlyRelevant = crTitleNorm.includes(normalized) || 
                                          normalized.includes(crTitleNorm) || 
                                          handleNorm.includes(normalized);
@@ -1112,9 +1115,6 @@ app.post('/api/youtube/search-channels', async (req, res) => {
                 subBonus = Math.min(subBonus, 150);
                 verifiedBonus = 0;
               }
-
-              const crTitleNorm = title.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
-              const handleNorm = handle.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
 
               let baseScore = isDirectlyRelevant ? 200 : 50;
               let isExact = false;
