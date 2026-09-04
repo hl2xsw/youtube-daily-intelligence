@@ -799,9 +799,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                 <span>{exactMatch.title}</span>
                                 <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover/link:text-red-500 transition-colors" />
                               </a>
-                              <span className="text-xs text-slate-500 font-mono">
-                                {exactMatch.handle}
-                              </span>
+                              {exactMatch.handle && exactMatch.handle.trim() && (
+                                <span className="text-xs text-slate-500 font-mono">
+                                  {exactMatch.handle}
+                                </span>
+                              )}
                               {exactMatch.subscriberCount && (
                                 <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md text-[11px] font-semibold border border-slate-200/80">
                                   구독자 {exactMatch.subscriberCount}
@@ -945,9 +947,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                       <span className="truncate">{result.title}</span>
                                       <ExternalLink className="w-3 h-3 text-slate-400 group-hover/title:text-red-500 transition-colors shrink-0" />
                                     </a>
-                                    <span className="text-[11px] text-slate-500 font-mono">
-                                      {result.handle}
-                                    </span>
+                                    {result.handle && result.handle.trim() && (
+                                      <span className="text-[11px] text-slate-500 font-mono">
+                                        {result.handle}
+                                      </span>
+                                    )}
                                     {result.subscriberCount && (
                                       <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded text-[10px] font-medium">
                                         {result.subscriberCount}

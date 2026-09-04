@@ -395,16 +395,27 @@ export function parseYouTubeRssXml(
 
 // Helper to construct exact YouTube Channel direct shortcut URL
 export function getYouTubeChannelUrl(channel: { channelId?: string; handle?: string; title?: string }): string {
-  if (channel.handle && channel.handle.trim()) {
-    const cleanH = channel.handle.trim().startsWith('@') ? channel.handle.trim() : `@${channel.handle.trim()}`;
-    return `https://www.youtube.com/${cleanH}`;
-  }
+  // 1. YouTube Channel ID (starts with UC, at least 22 chars) is the permanent, canonical address.
+  // This NEVER 404s on YouTube and automatically routes to the channel's custom handle if one exists.
   if (channel.channelId && channel.channelId.startsWith('UC') && !channel.channelId.startsWith('UC_') && channel.channelId.length >= 22) {
     return `https://www.youtube.com/channel/${channel.channelId}`;
   }
-  if (channel.title) {
-    return `https://www.youtube.com/results?search_query=${encodeURIComponent(channel.title)}`;
+
+  // 2. If handle is present and is a valid ASCII handle (e.g. @slow_doctor)
+  if (channel.handle && channel.handle.trim()) {
+    const rawH = channel.handle.trim();
+    const cleanH = rawH.startsWith('@') ? rawH : `@${rawH}`;
+    // Valid YouTube handle characters: ASCII letters, numbers, underscores, periods, and hyphens (no spaces, no Korean titles)
+    if (/^@[a-zA-Z0-9_.-]+$/.test(cleanH)) {
+      return `https://www.youtube.com/${cleanH}`;
+    }
   }
+
+  // 3. Fallback: Search on YouTube by channel title
+  if (channel.title && channel.title.trim()) {
+    return `https://www.youtube.com/results?search_query=${encodeURIComponent(channel.title.trim())}`;
+  }
+
   return 'https://www.youtube.com';
 }
 
@@ -1054,25 +1065,87 @@ export async function searchYouTubeChannels(query: string, customApiKey?: string
       if (apiRes.ok && ct.includes('application/json')) {
         const apiData = await apiRes.json().catch(() => null);
         const items = apiData?.items || [];
-        if (items.length > 0) {
+        const channelIds = items.map((it: any) => it.id?.channelId).filter(Boolean);
+
+        if (channelIds.length > 0) {
+          // Fetch exact channel details (customUrl/handle, subscriber count, high-res avatar)
+          const detailsMap = new Map<string, any>();
+          try {
+            const detUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${channelIds.join(',')}&key=${encodeURIComponent(apiKeyToUse)}`;
+            const detRes = await fetch(detUrl);
+            const detCt = detRes.headers.get('content-type') || '';
+            if (detRes.ok && detCt.includes('application/json')) {
+              const detData = await detRes.json().catch(() => null);
+              for (const d of (detData?.items || [])) {
+                if (d.id) detailsMap.set(d.id, d);
+              }
+            }
+          } catch (detErr) {
+            console.warn('Channel detail fetch error:', detErr);
+          }
+
           const directChannels: YouTubeChannelSearchResult[] = items.map((it: any) => {
             const cid = it.id?.channelId;
             const snip = it.snippet || {};
-            const title = snip.title || cleanQuery;
+            const detail = detailsMap.get(cid) || {};
+            const detailSnip = detail.snippet || snip;
+            const detailStats = detail.statistics || {};
+
+            const rawTitle = detailSnip.title || snip.title || cleanQuery;
+            const title = rawTitle
+              .replace(/&amp;/g, '&')
+              .replace(/&lt;/g, '<')
+              .replace(/&gt;/g, '>')
+              .replace(/&quot;/g, '"')
+              .replace(/&#39;/g, "'")
+              .trim();
+
+            let customUrl = detailSnip.customUrl || '';
+            if (customUrl && !customUrl.startsWith('@')) customUrl = `@${customUrl}`;
+            const handle = customUrl || '';
+
+            const rawSubCount = detailStats.subscriberCount;
+            let subCountStr = '공식 채널';
+            let subNum = 0;
+            if (rawSubCount) {
+              subNum = parseInt(rawSubCount, 10);
+              if (subNum >= 100000000) subCountStr = `구독자 ${(subNum / 100000000).toFixed(1)}억명`;
+              else if (subNum >= 10000) subCountStr = `구독자 ${(subNum / 10000).toFixed(1)}만명`;
+              else subCountStr = `구독자 ${subNum.toLocaleString()}명`;
+            }
+
+            const tNorm = title.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+            const normalizedQuery = cleanQuery.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+            const isExact = tNorm === normalizedQuery || (handle && handle.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedQuery);
+            const isStartsWith = tNorm.startsWith(normalizedQuery);
+            const isContains = tNorm.includes(normalizedQuery);
+
+            let baseScore = isExact ? 2500 : (isStartsWith ? 2000 : (isContains ? 1800 : 900));
+            let subBonus = 0;
+            if (subNum >= 2000000) subBonus = 1200;
+            else if (subNum >= 1000000) subBonus = 1000;
+            else if (subNum >= 500000) subBonus = 800;
+            else if (subNum >= 100000) subBonus = 600;
+            else if (subNum >= 10000) subBonus = 300;
+
             return {
               channelId: cid,
               title,
-              handle: `@${title.replace(/\s+/g, '').toLowerCase()}`,
-              subscriberCount: '공식 채널',
-              description: snip.description || `${title} 유튜브 채널`,
-              thumbnailUrl: snip.thumbnails?.high?.url || snip.thumbnails?.medium?.url || snip.thumbnails?.default?.url || '',
+              handle,
+              subscriberCount: subCountStr,
+              description: detailSnip.description || snip.description || `${title} 유튜브 채널`,
+              thumbnailUrl: detailSnip.thumbnails?.high?.url || detailSnip.thumbnails?.medium?.url || snip.thumbnails?.high?.url || snip.thumbnails?.medium?.url || snip.thumbnails?.default?.url || '',
               category: '기타',
-              isExactMatch: true,
-              matchReason: 'Google 공식 YouTube API 일치',
-              matchScore: 2000
+              isExactMatch: isExact,
+              matchReason: isExact ? 'Google 공식 YouTube API 일치' : (isStartsWith ? '공식 채널명 시작 일치' : '공식 YouTube API 결과'),
+              matchScore: baseScore + subBonus
             };
           }).filter((c: any) => Boolean(c.channelId));
-          if (directChannels.length > 0) return directChannels;
+
+          if (directChannels.length > 0) {
+            directChannels.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+            return directChannels;
+          }
         }
       }
     } catch (directErr) {
@@ -1191,7 +1264,7 @@ export async function searchYouTubeChannels(query: string, customApiKey?: string
               foundChannels.push({
                 channelId: cid,
                 title: tit,
-                handle: hdl || `@${tit.replace(/\s+/g, '')}`,
+                handle: hdl || '',
                 subscriberCount: subs,
                 description: `${tit} 유튜브 채널`,
                 thumbnailUrl: thumb || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
@@ -1475,7 +1548,6 @@ export async function lookupYouTubeChannel(input: string, customApiKey?: string)
 
           let h = snip.customUrl || '';
           if (h && !h.startsWith('@')) h = `@${h}`;
-          if (!h) h = `@${(snip.title || cleanInput).replace(/\s+/g, '').toLowerCase()}`;
 
           return {
             id: `ch-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,

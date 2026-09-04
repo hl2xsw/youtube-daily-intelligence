@@ -708,7 +708,6 @@ async function resolveChannelInfo(rawInput: string, fallbackTitle?: string, apiK
 
           let h = snip.customUrl || '';
           if (h && !h.startsWith('@')) h = `@${h}`;
-          if (!h) h = `@${(snip.title || clean).replace(/\s+/g, '').toLowerCase()}`;
 
           return {
             channelId: cId,
@@ -946,7 +945,7 @@ async function resolveChannelInfo(rawInput: string, fallbackTitle?: string, apiK
   }
 
   if (!handle) {
-    handle = clean.startsWith('@') ? clean : `@${clean.replace(/[^a-zA-Z0-9가-힣_]/g, '')}`;
+    handle = clean.startsWith('@') ? clean : '';
   }
 
   // Smart Category Inference
@@ -1084,7 +1083,7 @@ app.post('/api/youtube/search-channels', async (req, res) => {
               const title = detailSnip.title || snip.title || clean;
               let customUrl = detailSnip.customUrl || '';
               if (customUrl && !customUrl.startsWith('@')) customUrl = `@${customUrl}`;
-              const handle = customUrl || `@${title.replace(/\s+/g, '').toLowerCase()}`;
+              const handle = customUrl || '';
 
               const rawSubCount = detailStats.subscriberCount;
               let subCountStr = '구독자 정보 없음';
