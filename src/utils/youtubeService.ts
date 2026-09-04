@@ -1,6 +1,97 @@
 import { YouTubeChannel, YouTubeVideo, VideoCategory, YouTubeVideoSearchResult, DailyReport } from '../types';
 import { DEFAULT_CHANNELS, CHANNEL_PRESET_PACKS } from '../data/defaultChannels';
 
+export const YOUTUBE_API_KEY_STORAGE_KEY = 'user_youtube_api_key';
+
+let cachedServerApiKey = '';
+let cachedKeySource = '';
+
+// Read user-configured YouTube Data API key from localStorage, Vite env, or server .env
+export function getStoredYoutubeApiKey(): string {
+  if (typeof window === 'undefined') return '';
+  // 1. Check local storage
+  try {
+    const local = (localStorage.getItem(YOUTUBE_API_KEY_STORAGE_KEY) || '').trim();
+    if (local.length > 10) return local;
+  } catch {}
+
+  // 2. Check cached server key loaded from .env
+  if (cachedServerApiKey && cachedServerApiKey.length > 10) {
+    return cachedServerApiKey;
+  }
+
+  // 3. Check Vite frontend environment variables (.env / .env.local via import.meta.env)
+  try {
+    const metaEnv = (import.meta as any).env || {};
+    const viteKey = (
+      metaEnv.VITE_YOUTUBE_API_KEY ||
+      metaEnv.VITE_GOOGLE_API_KEY ||
+      metaEnv.VITE_YOUTUBE_DATA_API_KEY ||
+      ''
+    ).trim();
+    if (viteKey.length > 10) return viteKey;
+  } catch {}
+
+  return '';
+}
+
+// Save or remove user-configured YouTube Data API key in localStorage
+export function setStoredYoutubeApiKey(key: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const clean = key.trim();
+    if (clean) {
+      localStorage.setItem(YOUTUBE_API_KEY_STORAGE_KEY, clean);
+    } else {
+      localStorage.removeItem(YOUTUBE_API_KEY_STORAGE_KEY);
+    }
+  } catch {}
+}
+
+// Check if server has YOUTUBE_API_KEY environment variable configured in .env or system env
+export async function checkServerYoutubeApiStatus(): Promise<{
+  hasServerApiKey: boolean;
+  keyMasked: string | null;
+  source?: string;
+  varName?: string;
+}> {
+  try {
+    const res = await fetch('/api/youtube/status');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.clientKey && typeof data.clientKey === 'string') {
+        cachedServerApiKey = data.clientKey.trim();
+        cachedKeySource = data.source || '.env';
+      }
+      return {
+        hasServerApiKey: Boolean(data.hasServerApiKey),
+        keyMasked: data.keyMasked || null,
+        source: data.source || undefined,
+        varName: data.varName || undefined
+      };
+    }
+  } catch {}
+  return { hasServerApiKey: false, keyMasked: null };
+}
+
+// Validate YouTube Data API Key via server verification endpoint
+export async function testYoutubeApiKey(apiKey: string): Promise<{ success: boolean; message: string }> {
+  try {
+    const res = await fetch('/api/youtube/validate-key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: apiKey.trim() })
+    });
+    const data = await res.json();
+    return {
+      success: Boolean(data.success),
+      message: data.message || (data.success ? '인증 성공' : '인증 실패')
+    };
+  } catch (err: any) {
+    return { success: false, message: `요청 실패: ${err.message}` };
+  }
+}
+
 // All Known Curated Channels for instant client-side lookup & fallback search
 const ALL_KNOWN_CHANNELS: YouTubeChannel[] = (() => {
   const map = new Map<string, YouTubeChannel>();
@@ -628,11 +719,13 @@ export async function searchYouTubeVideos(
 
   // 1. Try server-side API (available in Fullstack / AI Studio / Cloud Run)
   try {
+    const apiKeyToUse = getStoredYoutubeApiKey();
     const res = await fetch('/api/youtube/search-videos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         query: cleanQuery,
+        apiKey: apiKeyToUse,
         dateFilter: options?.dateFilter || 'all',
         sortBy: options?.sortBy || 'relevance',
         limit: options?.limit || 35
@@ -753,11 +846,13 @@ export async function searchConfiguredChannels(
   return matchedVideos;
 }
 
-export async function searchYouTubeChannels(query: string): Promise<YouTubeChannelSearchResult[]> {
+export async function searchYouTubeChannels(query: string, customApiKey?: string): Promise<YouTubeChannelSearchResult[]> {
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
 
-  // 1. Try server API with timeout
+  const apiKeyToUse = (customApiKey || getStoredYoutubeApiKey()).trim();
+
+  // 1. Try server API with timeout (passes user/environment YouTube API Key)
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000);
@@ -765,7 +860,7 @@ export async function searchYouTubeChannels(query: string): Promise<YouTubeChann
     const res = await fetch('/api/youtube/search-channels', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: cleanQuery }),
+      body: JSON.stringify({ query: cleanQuery, apiKey: apiKeyToUse }),
       signal: controller.signal
     });
     clearTimeout(timeoutId);
@@ -778,6 +873,40 @@ export async function searchYouTubeChannels(query: string): Promise<YouTubeChann
     }
   } catch {
     // Backend API unavailable or timed out -> fallback to client-side multi-tier search
+  }
+
+  // 1-1. If API Key is configured on client, directly call Google official YouTube Data API v3!
+  if (apiKeyToUse) {
+    try {
+      const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&maxResults=10&q=${encodeURIComponent(cleanQuery)}&key=${apiKeyToUse}`;
+      const apiRes = await fetch(searchUrl);
+      if (apiRes.ok) {
+        const apiData = await apiRes.json();
+        const items = apiData.items || [];
+        if (items.length > 0) {
+          const directChannels: YouTubeChannelSearchResult[] = items.map((it: any) => {
+            const cid = it.id?.channelId;
+            const snip = it.snippet || {};
+            const title = snip.title || cleanQuery;
+            return {
+              channelId: cid,
+              title,
+              handle: `@${title.replace(/\s+/g, '').toLowerCase()}`,
+              subscriberCount: '공식 채널',
+              description: snip.description || `${title} 유튜브 채널`,
+              thumbnailUrl: snip.thumbnails?.high?.url || snip.thumbnails?.medium?.url || snip.thumbnails?.default?.url || '',
+              category: '기타',
+              isExactMatch: true,
+              matchReason: 'Google 공식 YouTube API 일치',
+              matchScore: 2000
+            };
+          }).filter((c: any) => Boolean(c.channelId));
+          if (directChannels.length > 0) return directChannels;
+        }
+      }
+    } catch (directErr) {
+      console.warn('Client direct YouTube API call failed:', directErr);
+    }
   }
 
   // 2. Client-Side Known Channels Catalog Search
@@ -1098,13 +1227,15 @@ export async function syncAndRepairChannels(channels: YouTubeChannel[]): Promise
 }
 
 // Real Channel Lookup
-export async function lookupYouTubeChannel(input: string): Promise<YouTubeChannel | null> {
+export async function lookupYouTubeChannel(input: string, customApiKey?: string): Promise<YouTubeChannel | null> {
   let cleanInput = input.trim();
   if (!cleanInput) return null;
 
   try {
     cleanInput = decodeURIComponent(cleanInput);
   } catch {}
+
+  const apiKeyToUse = (customApiKey || getStoredYoutubeApiKey()).trim();
 
   // 1. Check known channels catalog first for instant precision match
   const normInput = cleanInput.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
@@ -1127,12 +1258,12 @@ export async function lookupYouTubeChannel(input: string): Promise<YouTubeChanne
     };
   }
 
-  // 2. Try server API (if in fullstack mode)
+  // 2. Try server API (passes apiKey)
   try {
     const res = await fetch('/api/youtube/lookup-channel', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ input: cleanInput })
+      body: JSON.stringify({ input: cleanInput, apiKey: apiKeyToUse })
     });
 
     if (res.ok) {
@@ -1148,6 +1279,55 @@ export async function lookupYouTubeChannel(input: string): Promise<YouTubeChanne
     }
   } catch {
     // Continue to client fallback
+  }
+
+  // 2-1. Client-side official API direct resolve if apiKey is present
+  if (apiKeyToUse) {
+    try {
+      let ytApiUrl = '';
+      if (/^UC[a-zA-Z0-9_-]{22}$/.test(cleanInput)) {
+        ytApiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${cleanInput}&key=${apiKeyToUse}`;
+      } else if (cleanInput.startsWith('@')) {
+        ytApiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&forHandle=${encodeURIComponent(cleanInput)}&key=${apiKeyToUse}`;
+      } else {
+        ytApiUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&maxResults=1&q=${encodeURIComponent(cleanInput)}&key=${apiKeyToUse}`;
+      }
+
+      const res = await fetch(ytApiUrl);
+      if (res.ok) {
+        const d = await res.json();
+        const item = d.items?.[0];
+        if (item) {
+          const cid = item.id?.channelId || item.id;
+          const snip = item.snippet || {};
+          const stats = item.statistics || {};
+          let subStr = '구독자 정보 없음';
+          if (stats.subscriberCount) {
+            const sn = parseInt(stats.subscriberCount, 10);
+            if (sn >= 100000000) subStr = `${(sn / 100000000).toFixed(1)}억명`;
+            else if (sn >= 10000) subStr = `${(sn / 10000).toFixed(1)}만명`;
+            else subStr = `${sn.toLocaleString()}명`;
+          }
+
+          let h = snip.customUrl || '';
+          if (h && !h.startsWith('@')) h = `@${h}`;
+          if (!h) h = `@${(snip.title || cleanInput).replace(/\s+/g, '').toLowerCase()}`;
+
+          return {
+            id: `ch-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            channelId: cid,
+            title: snip.title || cleanInput,
+            handle: h,
+            description: snip.description || `${snip.title} 채널`,
+            thumbnailUrl: snip.thumbnails?.high?.url || snip.thumbnails?.medium?.url || snip.thumbnails?.default?.url || '',
+            category: '기타' as VideoCategory,
+            isActive: true,
+            subscriberCount: subStr,
+            addedAt: new Date().toISOString()
+          };
+        }
+      }
+    } catch {}
   }
 
   // 3. Client-side URL/Handle parser fallback

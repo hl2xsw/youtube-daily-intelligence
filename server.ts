@@ -1,10 +1,83 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Automatically detect and load .env and .env.local from project root and working directory
+const possibleEnvFiles = [
+  path.resolve(process.cwd(), '.env'),
+  path.resolve(process.cwd(), '.env.local'),
+  path.resolve(__dirname, '.env'),
+  path.resolve(__dirname, '.env.local')
+];
+for (const envPath of possibleEnvFiles) {
+  try {
+    if (fs.existsSync(envPath)) {
+      dotenv.config({ path: envPath, override: true });
+    }
+  } catch {}
+}
+// Default fallback
 dotenv.config();
+
+// Helper to reliably get YouTube Data API Key from .env, .env.local, or process.env
+export function getEffectiveServerYoutubeApiKey(): { key: string; source: string; varName: string } {
+  // 1. Check disk .env and .env.local first so any user file edits are picked up immediately
+  for (const envPath of possibleEnvFiles) {
+    try {
+      if (fs.existsSync(envPath)) {
+        const fileContent = fs.readFileSync(envPath, 'utf-8');
+        const lines = fileContent.split(/\r?\n/);
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          const match = trimmed.match(/^\s*(?:export\s+)?([A-Za-z0-9_]+)\s*=\s*(.*)$/);
+          if (match) {
+            const varName = match[1];
+            let val = match[2].trim();
+            val = val.replace(/^["']|["']$/g, '').trim();
+            if (
+              (varName.toUpperCase().includes('YOUTUBE') || varName.toUpperCase().includes('GOOGLE_API_KEY')) &&
+              val.length > 10
+            ) {
+              process.env[varName] = val;
+              process.env.YOUTUBE_API_KEY = val;
+              return { key: val, source: `${path.basename(envPath)} (${varName})`, varName };
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // 2. Fallback: Check process.env with all common naming variations
+  const candidateNames = [
+    'YOUTUBE_API_KEY',
+    'VITE_YOUTUBE_API_KEY',
+    'YOUTUBE_DATA_API_KEY',
+    'GOOGLE_YOUTUBE_API_KEY',
+    'GOOGLE_API_KEY',
+    'YOUTUBE_KEY'
+  ];
+
+  for (const name of candidateNames) {
+    const val = process.env[name];
+    if (val && typeof val === 'string') {
+      const clean = val.trim().replace(/^["']|["']$/g, '');
+      if (clean.length > 10) {
+        return { key: clean, source: `process.env (${name})`, varName: name };
+      }
+    }
+  }
+
+  return { key: '', source: 'none', varName: '' };
+}
 
 const app = express();
 const PORT = 3000;
@@ -564,7 +637,7 @@ const KNOWN_CHANNELS_MAP: Array<{
 ];
 
 // Helper: Deep resolve YouTube channel metadata and real channelId
-async function resolveChannelInfo(rawInput: string, fallbackTitle?: string): Promise<{
+async function resolveChannelInfo(rawInput: string, fallbackTitle?: string, apiKey?: string): Promise<{
   channelId: string;
   title: string;
   handle: string;
@@ -588,6 +661,70 @@ async function resolveChannelInfo(rawInput: string, fallbackTitle?: string): Pro
   clean = clean.replace(/\/(videos|featured|about|community|streams|playlists)$/i, '');
 
   const normalized = clean.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+
+  const serverKeyInfo = getEffectiveServerYoutubeApiKey();
+  const effectiveApiKey = (apiKey || serverKeyInfo.key || '').trim();
+
+  // 0. Official YouTube Data API v3 (Tier 0 - Highest precision & zero bot blocking)
+  if (effectiveApiKey) {
+    try {
+      let ytApiUrl = '';
+      if (/^UC[a-zA-Z0-9_-]{22}$/.test(clean)) {
+        ytApiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${clean}&key=${effectiveApiKey}`;
+      } else if (clean.startsWith('@')) {
+        ytApiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&forHandle=${encodeURIComponent(clean)}&key=${effectiveApiKey}`;
+      } else {
+        ytApiUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&maxResults=1&q=${encodeURIComponent(clean)}&key=${effectiveApiKey}`;
+      }
+
+      const apiRes = await fetch(ytApiUrl);
+      if (apiRes.ok) {
+        const apiData = await apiRes.json();
+        let channelItem = apiData.items?.[0];
+        if (channelItem) {
+          let cId = channelItem.id?.channelId || channelItem.id;
+          let snip = channelItem.snippet || {};
+          let stats = channelItem.statistics || {};
+
+          if (channelItem.id?.channelId && !channelItem.statistics) {
+            const detailRes = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${cId}&key=${effectiveApiKey}`);
+            if (detailRes.ok) {
+              const detailData = await detailRes.json();
+              if (detailData.items?.[0]) {
+                channelItem = detailData.items[0];
+                snip = channelItem.snippet || snip;
+                stats = channelItem.statistics || stats;
+              }
+            }
+          }
+
+          let subText = '구독자 정보 없음';
+          if (stats.subscriberCount) {
+            const sn = parseInt(stats.subscriberCount, 10);
+            if (sn >= 100000000) subText = `${(sn / 100000000).toFixed(1)}억명`;
+            else if (sn >= 10000) subText = `${(sn / 10000).toFixed(1)}만명`;
+            else subText = `${sn.toLocaleString()}명`;
+          }
+
+          let h = snip.customUrl || '';
+          if (h && !h.startsWith('@')) h = `@${h}`;
+          if (!h) h = `@${(snip.title || clean).replace(/\s+/g, '').toLowerCase()}`;
+
+          return {
+            channelId: cId,
+            title: snip.title || clean,
+            handle: h,
+            description: snip.description || `${snip.title} 공식 유튜브 채널`,
+            thumbnailUrl: snip.thumbnails?.high?.url || snip.thumbnails?.medium?.url || snip.thumbnails?.default?.url || '',
+            subscriberCount: subText,
+            category: '기타'
+          };
+        }
+      }
+    } catch (apiErr) {
+      console.warn('Official YouTube API direct resolve failed, falling back:', apiErr);
+    }
+  }
 
   // 1. Check known channel catalog
   for (const item of KNOWN_CHANNELS_MAP) {
@@ -832,12 +969,12 @@ async function resolveChannelInfo(rawInput: string, fallbackTitle?: string): Pro
 // 2. Lookup YouTube Channel (via handle or URL or ID or search query)
 app.post('/api/youtube/lookup-channel', async (req, res) => {
   try {
-    const { input } = req.body;
+    const { input, apiKey } = req.body;
     if (!input) {
       return res.status(400).json({ error: '채널 URL, @핸들 또는 채널 ID를 입력해주세요.' });
     }
 
-    const channelData = await resolveChannelInfo(input);
+    const channelData = await resolveChannelInfo(input, undefined, apiKey);
     res.json({ success: true, channel: channelData });
   } catch (error: any) {
     console.error('Channel lookup error:', error);
@@ -845,10 +982,47 @@ app.post('/api/youtube/lookup-channel', async (req, res) => {
   }
 });
 
+// 2-0. Check YouTube API Status
+app.get('/api/youtube/status', (req, res) => {
+  const serverKeyInfo = getEffectiveServerYoutubeApiKey();
+  const hasServerKey = Boolean(serverKeyInfo.key);
+  res.json({
+    success: true,
+    hasServerApiKey: hasServerKey,
+    source: serverKeyInfo.source,
+    varName: serverKeyInfo.varName,
+    keyMasked: hasServerKey ? `${serverKeyInfo.key.substring(0, 6)}...` : null,
+    clientKey: hasServerKey ? serverKeyInfo.key : null
+  });
+});
+
+// 2-0-1. Validate YouTube Data API Key
+app.post('/api/youtube/validate-key', async (req, res) => {
+  const serverKeyInfo = getEffectiveServerYoutubeApiKey();
+  const apiKey = (req.body.apiKey || serverKeyInfo.key || '').trim();
+  if (!apiKey) {
+    return res.status(400).json({ success: false, message: '검증할 API 키가 없습니다. .env 파일에 YOUTUBE_API_KEY를 작성해주세요.' });
+  }
+
+  try {
+    const testUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&maxResults=1&q=news&key=${apiKey}`;
+    const testRes = await fetch(testUrl);
+    if (testRes.ok) {
+      return res.json({ success: true, message: 'Google YouTube Data API v3 키가 정상 인증되었습니다!' });
+    } else {
+      const errJson = await testRes.json().catch(() => ({}));
+      const errMsg = errJson?.error?.message || `HTTP ${testRes.status} 인증 실패`;
+      return res.status(400).json({ success: false, message: `API 키 검증 실패: ${errMsg}` });
+    }
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: `네트워크 연결 오류: ${err.message}` });
+  }
+});
+
 // 2-1. Search YouTube Channels (Returns multiple candidate channels for user selection)
 app.post('/api/youtube/search-channels', async (req, res) => {
   try {
-    const { query } = req.body;
+    const { query, apiKey } = req.body;
     if (!query || !query.trim()) {
       return res.status(400).json({ error: '검색어를 입력해주세요.' });
     }
@@ -875,11 +1049,94 @@ app.post('/api/youtube/search-channels', async (req, res) => {
     const seenIds = new Set<string>();
 
     const normalized = clean.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+    const serverKeyInfo = getEffectiveServerYoutubeApiKey();
+    const effectiveApiKey = (apiKey || serverKeyInfo.key || '').trim();
+
+    // 0. Official YouTube Data API v3 (Tier 0 - Highest precision & zero bot blocking)
+    if (effectiveApiKey) {
+      try {
+        const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&maxResults=15&q=${encodeURIComponent(clean)}&key=${effectiveApiKey}`;
+        const ytRes = await fetch(searchUrl);
+        if (ytRes.ok) {
+          const ytData = await ytRes.json();
+          const items = ytData.items || [];
+          const channelIds = items.map((it: any) => it.id?.channelId).filter(Boolean);
+
+          if (channelIds.length > 0) {
+            const detailsUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${channelIds.join(',')}&key=${effectiveApiKey}`;
+            const detailsRes = await fetch(detailsUrl);
+            const detailsData = detailsRes.ok ? await detailsRes.json() : { items: [] };
+            const detailsMap = new Map<string, any>();
+            for (const item of (detailsData.items || [])) {
+              detailsMap.set(item.id, item);
+            }
+
+            for (const it of items) {
+              const cid = it.id?.channelId;
+              if (!cid || seenIds.has(cid)) continue;
+              seenIds.add(cid);
+
+              const snip = it.snippet || {};
+              const detail = detailsMap.get(cid) || {};
+              const detailSnip = detail.snippet || snip;
+              const detailStats = detail.statistics || {};
+
+              const title = detailSnip.title || snip.title || clean;
+              let customUrl = detailSnip.customUrl || '';
+              if (customUrl && !customUrl.startsWith('@')) customUrl = `@${customUrl}`;
+              const handle = customUrl || `@${title.replace(/\s+/g, '').toLowerCase()}`;
+
+              const rawSubCount = detailStats.subscriberCount;
+              let subCountStr = '구독자 정보 없음';
+              let subNum = 0;
+              if (rawSubCount) {
+                subNum = parseInt(rawSubCount, 10);
+                if (subNum >= 100000000) subCountStr = `${(subNum / 100000000).toFixed(1)}억명`;
+                else if (subNum >= 10000) subCountStr = `${(subNum / 10000).toFixed(1)}만명`;
+                else subCountStr = `${subNum.toLocaleString()}명`;
+              }
+
+              const thumb = detailSnip.thumbnails?.high?.url || detailSnip.thumbnails?.medium?.url || detailSnip.thumbnails?.default?.url || snip.thumbnails?.default?.url || '';
+              const desc = detailSnip.description || snip.description || '';
+
+              const tNorm = title.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+              const hNorm = handle.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+              const isExact = tNorm === normalized || hNorm === normalized || `@${hNorm}` === `@${normalized}`;
+              const isStartsWith = tNorm.startsWith(normalized);
+              const isContains = tNorm.includes(normalized);
+
+              let baseScore = isExact ? 2500 : (isStartsWith ? 2000 : (isContains ? 1800 : 900));
+              let subBonus = 0;
+              if (subNum >= 2000000) subBonus = 1200;
+              else if (subNum >= 1000000) subBonus = 1000;
+              else if (subNum >= 500000) subBonus = 800;
+              else if (subNum >= 100000) subBonus = 600;
+              else if (subNum >= 10000) subBonus = 300;
+
+              results.push({
+                channelId: cid,
+                title,
+                handle,
+                description: desc || `${title} 유튜브 채널`,
+                thumbnailUrl: thumb || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
+                subscriberCount: subCountStr,
+                category: '기타',
+                isExactMatch: isExact,
+                matchReason: isExact ? '공식 API 채널명 일치' : (isStartsWith ? '공식 API 시작 일치' : '공식 YouTube API 결과'),
+                matchScore: baseScore + subBonus
+              });
+            }
+          }
+        }
+      } catch (apiErr) {
+        console.warn('Official YouTube API search error, falling back:', apiErr);
+      }
+    }
 
     // 1. If query looks like a handle, URL, or channel ID, try direct resolve first
     if (clean.startsWith('@') || clean.startsWith('http') || /^UC[a-zA-Z0-9_-]{22}$/.test(clean)) {
       try {
-        const direct = await resolveChannelInfo(clean);
+        const direct = await resolveChannelInfo(clean, undefined, effectiveApiKey);
         if (direct && direct.channelId && !seenIds.has(direct.channelId)) {
           seenIds.add(direct.channelId);
           results.push({
@@ -1443,13 +1700,15 @@ async function fetchYouTubeInnertubeSearch(queryStr: string, searchParams?: stri
 // Real-Time YouTube Video Search Endpoint
 app.post('/api/youtube/search-videos', async (req, res) => {
   try {
-    const { query, dateFilter = 'all', sortBy = 'relevance', limit = 25 } = req.body;
+    const { query, dateFilter = 'all', sortBy = 'relevance', limit = 25, apiKey } = req.body;
     if (!query || typeof query !== 'string' || !query.trim()) {
       return res.status(400).json({ error: '검색어를 입력해주세요.' });
     }
 
     const trimmed = query.trim();
     const nowEpoch = Date.now();
+    const serverKeyInfo = getEffectiveServerYoutubeApiKey();
+    const effectiveApiKey = (typeof apiKey === 'string' && apiKey.trim()) || serverKeyInfo.key || '';
 
     // 1. Direct Video ID or YouTube URL detection
     const urlMatch = trimmed.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/i);
@@ -1491,6 +1750,60 @@ app.post('/api/youtube/search-videos', async (req, res) => {
         return res.json({ success: true, videos: singleResult, total: 1 });
       } catch (directErr) {
         console.warn('Direct video lookup fallback to standard search:', directErr);
+      }
+    }
+
+    // 1-1. Official YouTube Data API v3 Search (Guaranteed in Cloud Run / Production)
+    if (effectiveApiKey && !directVideoId) {
+      try {
+        let publishedAfter = '';
+        if (dateFilter === 'today' || dateFilter === '24hours') {
+          publishedAfter = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        } else if (dateFilter === 'week') {
+          publishedAfter = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        } else if (dateFilter === 'month') {
+          publishedAfter = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        }
+
+        let order = 'relevance';
+        if (sortBy === 'date') order = 'date';
+        else if (sortBy === 'viewCount') order = 'viewCount';
+
+        let ytSearchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=${Math.min(limit, 50)}&q=${encodeURIComponent(trimmed)}&order=${order}&key=${effectiveApiKey}`;
+        if (publishedAfter) {
+          ytSearchUrl += `&publishedAfter=${encodeURIComponent(publishedAfter)}`;
+        }
+
+        const ytRes = await fetch(ytSearchUrl);
+        if (ytRes.ok) {
+          const ytData = await ytRes.json();
+          if (ytData.items && ytData.items.length > 0) {
+            const officialVideos = ytData.items.map((item: any) => {
+              const vid = item.id?.videoId;
+              const snip = item.snippet || {};
+              return {
+                videoId: vid,
+                channelId: snip.channelId || `ch-${vid}`,
+                channelTitle: snip.channelTitle || 'YouTube Creator',
+                channelThumbnail: '',
+                title: (snip.title || '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim(),
+                description: snip.description || '',
+                timeAgo: '공식 API',
+                viewCountText: '',
+                duration: '',
+                thumbnailUrl: snip.thumbnails?.high?.url || snip.thumbnails?.medium?.url || snip.thumbnails?.default?.url || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+                videoUrl: `https://www.youtube.com/watch?v=${vid}`,
+                publishedAt: snip.publishedAt || new Date().toISOString()
+              };
+            }).filter((v: any) => Boolean(v.videoId));
+
+            if (officialVideos.length > 0) {
+              return res.json({ success: true, videos: officialVideos, total: officialVideos.length });
+            }
+          }
+        }
+      } catch (officialErr) {
+        console.warn('Official YouTube video search failed, falling back to innertube:', officialErr);
       }
     }
 
