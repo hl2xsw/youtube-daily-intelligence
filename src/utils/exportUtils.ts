@@ -88,6 +88,16 @@ export function generateVideoMarkdown(video: YouTubeVideo): string {
     md += `${video.description || '요약 데이터가 아직 생성되지 않았습니다.'}\n`;
   }
 
+  if (video.fullDescription) {
+    md += `\n## 📄 영상 전체 원본 설명 및 세부 내용\n\n`;
+    md += `${video.fullDescription}\n\n`;
+  }
+
+  if (video.transcript) {
+    md += `\n## 🎙️ 유튜브 음성 발화 자막 스크립트 전문 (Full Transcript)\n\n`;
+    md += `\`\`\`text\n${video.transcript}\n\`\`\`\n\n`;
+  }
+
   md += `\n\n---\n*생성 일시: ${new Date().toLocaleString('ko-KR')} | YouTube Daily Summary System*`;
   return md;
 }
@@ -161,6 +171,18 @@ export function generateVideoText(video: YouTubeVideo): string {
     txt += `영상 설명:\n${video.description}\n`;
   }
 
+  if (video.fullDescription) {
+    txt += `\n-----------------------------------------------------------------\n`;
+    txt += `[📄 영상 전체 원본 설명 및 상세 내용]\n\n`;
+    txt += `${video.fullDescription}\n\n`;
+  }
+
+  if (video.transcript) {
+    txt += `\n-----------------------------------------------------------------\n`;
+    txt += `[🎙️ 유튜브 음성 발화 자막 스크립트 전문 (Full Transcript)]\n\n`;
+    txt += `${video.transcript}\n\n`;
+  }
+
   txt += `\n=================================================================\n`;
   txt += `리포트 생성 시간: ${new Date().toLocaleString('ko-KR')}\n`;
   return txt;
@@ -188,6 +210,7 @@ export function generateVideoWordDoc(video: YouTubeVideo): string {
       ul, ol { padding-left: 20px; }
       li { margin-bottom: 6px; font-size: 13.5px; }
       .tag { display: inline-block; background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 4px; }
+      .transcript-box { background-color: #f1f5f9; border: 1px solid #cbd5e1; padding: 14px; border-radius: 6px; font-family: monospace; font-size: 12px; white-space: pre-wrap; line-height: 1.7; color: #0f172a; }
       .footer { margin-top: 30px; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 8px; }
     </style>
   </head>
@@ -201,6 +224,16 @@ export function generateVideoWordDoc(video: YouTubeVideo): string {
       <div class="meta-item"><b>영상 링크:</b> <a href="${video.videoUrl}">${video.videoUrl}</a></div>
       ${video.duration ? `<div class="meta-item"><b>재생 시간:</b> ${video.duration}</div>` : ''}
     </div>
+
+    ${video.fullDescription ? `
+      <h2>📄 영상 원본 상세 내용</h2>
+      <p style="font-size: 13px; white-space: pre-line; background-color: #f8fafc; padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px;">${escapeHtml(video.fullDescription)}</p>
+    ` : ''}
+
+    ${video.transcript ? `
+      <h2>🎙️ 유튜브 음성 발화 자막 스크립트 전문 (Full Transcript)</h2>
+      <div class="transcript-box">${escapeHtml(video.transcript)}</div>
+    ` : ''}
 
     ${s ? `
       <h2>🎯 핵심 주제 (Core Topic)</h2>

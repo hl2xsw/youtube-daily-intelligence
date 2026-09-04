@@ -14,7 +14,8 @@ import {
   Calendar, 
   ChevronRight,
   TrendingUp,
-  Loader2
+  Loader2,
+  Subtitles
 } from 'lucide-react';
 import { YouTubeVideo, YouTubeVideoSearchResult, YouTubeChannel } from '../types';
 import { 
@@ -36,6 +37,7 @@ interface VideoSearchModalProps {
   onAddChannel?: (channel: Omit<YouTubeChannel, 'id' | 'addedAt'>) => Promise<void> | void;
   onQuickAnalyze?: (input: string) => Promise<void>;
   isQuickAnalyzing?: boolean;
+  onOpenDetail?: (video: YouTubeVideo) => void;
 }
 
 const POPULAR_SEARCH_KEYWORDS = [
@@ -61,7 +63,8 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
   onAddVideo,
   onAddChannel,
   onQuickAnalyze,
-  isQuickAnalyzing = false
+  isQuickAnalyzing = false,
+  onOpenDetail
 }) => {
   const { showToast } = useToast();
   const safeInitialQuery = typeof initialQuery === 'string' ? initialQuery : '';
@@ -691,23 +694,40 @@ export const VideoSearchModal: React.FC<VideoSearchModalProps> = ({
                       </div>
 
                       {/* Action Buttons */}
-                      <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
-                        {/* 1. Instant AI Analyze */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100">
+                        {/* 1. View Full Subtitle & Content directly */}
+                        {onOpenDetail && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const converted = convertSearchResultToVideo(video);
+                              onOpenDetail(converted);
+                            }}
+                            className="flex-1 py-1.5 px-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 shadow-2xs"
+                            title="AI 요약 없이 자막 및 원본 내용 전문 바로 보기"
+                          >
+                            <Subtitles className="w-3.5 h-3.5 text-white" />
+                            <span>자막/내용 전문 보기</span>
+                          </button>
+                        )}
+
+                        {/* 2. Instant AI Analyze */}
                         <button
                           type="button"
                           onClick={() => handleAnalyze(video)}
                           disabled={isCurrentlyAnalyzing}
-                          className="flex-1 py-1.5 px-2.5 bg-amber-400 hover:bg-amber-300 active:bg-amber-500 text-slate-950 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 disabled:opacity-50 shadow-2xs"
+                          className="py-1.5 px-2.5 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-800 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1 disabled:opacity-50 shadow-2xs"
+                          title="Gemini AI 요약 및 시사점 도출"
                         >
                           {isCurrentlyAnalyzing ? (
                             <>
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                              <span>AI 분석 중...</span>
+                              <Loader2 className="w-3 h-3 animate-spin text-amber-600" />
+                              <span>분석 중...</span>
                             </>
                           ) : (
                             <>
-                              <Sparkles className="w-3 h-3 text-slate-900" />
-                              <span>⚡ 즉시 AI 요약</span>
+                              <Sparkles className="w-3 h-3 text-amber-500" />
+                              <span>AI 요약</span>
                             </>
                           )}
                         </button>

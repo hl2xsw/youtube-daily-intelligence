@@ -17,7 +17,8 @@ import {
   FileType,
   Lightbulb,
   Tag,
-  Flame
+  Flame,
+  Subtitles
 } from 'lucide-react';
 import { 
   generateVideoMarkdown, 
@@ -253,25 +254,72 @@ export const VideoCard: React.FC<VideoCardProps> = ({
           </div>
         </div>
 
-        {/* Key Points (Direct On-Card Summary) */}
-        {s && (
-          <div className="mt-0.5 space-y-1.5 pb-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-700 flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-slate-500" />
-                주요 포인트
+        {/* Subtitle & Content Preview Block */}
+        {video.transcript ? (
+          <div className="mt-1 p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-200/90 text-xs">
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-bold text-emerald-900 flex items-center gap-1">
+                <Subtitles className="w-3.5 h-3.5 text-emerald-600" />
+                자막 스크립트 발화 내용
               </span>
-              <span className="text-[11px] text-slate-400 font-medium">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenDetail(video);
+                }}
+                className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 underline"
+              >
+                전문 읽기
+              </button>
+            </div>
+            <p className="text-slate-700 leading-relaxed line-clamp-3 font-sans">
+              {video.transcript}
+            </p>
+          </div>
+        ) : (
+          <div className="mt-1 p-2.5 rounded-xl bg-slate-50 border border-slate-200/90 text-xs">
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-bold text-slate-800 flex items-center gap-1">
+                <FileText className="w-3.5 h-3.5 text-blue-600" />
+                영상 본문 및 설명
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenDetail(video);
+                }}
+                className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 underline"
+              >
+                전문 보기
+              </button>
+            </div>
+            <p className="text-slate-600 leading-relaxed line-clamp-3 font-sans">
+              {video.fullDescription || video.description || '영상 본문 및 자막 정보를 불러오는 중입니다...'}
+            </p>
+          </div>
+        )}
+
+        {/* Key Points (Supplementary Summary) */}
+        {s && (
+          <div className="mt-1 space-y-1 pb-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-slate-400" />
+                주요 핵심 포인트
+              </span>
+              <span className="text-[10px] text-slate-400 font-medium">
                 약 {s.readingTimeMinutes}분 소요
               </span>
             </div>
-            <ul className="space-y-1.5">
-              {s.keyPoints.slice(0, 3).map((pt, idx) => (
-                <li key={idx} className="text-xs text-slate-600 flex items-start gap-2 leading-relaxed">
-                  <span className="w-3.5 h-3.5 rounded bg-slate-100 text-slate-600 font-semibold text-[10px] flex items-center justify-center shrink-0 mt-0.5">
+            <ul className="space-y-1">
+              {s.keyPoints.slice(0, 2).map((pt, idx) => (
+                <li key={idx} className="text-xs text-slate-600 flex items-start gap-1.5 leading-relaxed">
+                  <span className="w-3.5 h-3.5 rounded bg-slate-100 text-slate-500 font-semibold text-[10px] flex items-center justify-center shrink-0 mt-0.5">
                     {idx + 1}
                   </span>
-                  <span className="line-clamp-2">{pt}</span>
+                  <span className="line-clamp-1">{pt}</span>
                 </li>
               ))}
             </ul>
@@ -460,6 +508,16 @@ export const VideoCard: React.FC<VideoCardProps> = ({
               </>
             )}
           </div>
+
+          {/* Primary View Full Transcript / Content */}
+          <button
+            onClick={() => onOpenDetail(video)}
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-md transition-colors shadow-2xs"
+            title="자막 스크립트 및 내용 전문 전체 보기"
+          >
+            <Subtitles className="w-3.5 h-3.5 text-emerald-700" />
+            <span>자막/내용 전문</span>
+          </button>
 
           {/* Open Detail Modal */}
           <button

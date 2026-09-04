@@ -925,6 +925,10 @@ function AppContent() {
         onReanalyze={handleAnalyzeVideo}
         onChangeCategory={handleChangeVideoCategory}
         isAnalyzing={analyzingVideoId === selectedVideo?.id}
+        onUpdateVideo={(updated) => {
+          setVideos(prev => prev.map(v => v.id === updated.id ? { ...v, ...updated } : v));
+          setSelectedVideo(prev => (prev && prev.id === updated.id ? { ...prev, ...updated } : prev));
+        }}
       />
 
       {/* Live YouTube Video Search Modal */}
@@ -938,6 +942,9 @@ function AppContent() {
         onAddVideo={handleAddVideoFromSearch}
         onAddChannel={handleAddChannel}
         onQuickAnalyze={handleQuickAnalyze}
+        onOpenDetail={(v) => {
+          setSelectedVideo(v);
+        }}
       />
 
       {/* Excel / CSV / Document Export Modal */}
